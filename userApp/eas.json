@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://farm-mart-api.onrender.com/api",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://farm-mart-api.onrender.com/api",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

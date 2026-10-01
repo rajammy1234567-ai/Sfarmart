@@ -1,0 +1,220 @@
+.calculator-section {
+  background-color: var(--surface-white);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.calculator-wrapper {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 3.5rem;
+  align-items: center;
+  background: linear-gradient(135deg, #f0fdf4 0%, #fafaf9 100%);
+  border-radius: 32px;
+  padding: 3.5rem;
+  border: 1px solid var(--border-green);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 992px) {
+  .calculator-wrapper {
+    grid-template-columns: 1fr;
+    padding: 2rem;
+    gap: 2.5rem;
+  }
+}
+
+.calc-controls h2 {
+  font-size: 2.3rem;
+  font-weight: 500;
+  margin-bottom: 0.85rem;
+}
+
+.calc-desc {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
+.partner-type-selector {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.type-btn {
+  padding: 0.65rem 1.25rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.type-btn:hover {
+  border-color: var(--border-green);
+  color: var(--primary-green);
+}
+
+.type-btn.selected {
+  background-color: var(--primary-green);
+  color: #ffffff;
+  border-color: var(--primary-green);
+  box-shadow: 0 4px 12px rgba(21, 128, 61, 0.25);
+}
+
+/* Custom Slider */
+.slider-box {
+  background: #ffffff;
+  padding: 1.75rem;
+  border-radius: 20px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.slider-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.slider-value-badge {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--primary-green);
+  background-color: var(--primary-light);
+  padding: 0.2rem 0.85rem;
+  border-radius: 10px;
+}
+
+.custom-range-slider {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  outline: none;
+  accent-color: var(--primary-emerald);
+  cursor: pointer;
+}
+
+.slider-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-weight: 500;
+  margin-top: 0.5rem;
+}
+
+/* Results Card */
+.calc-results-card {
+  position: relative;
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+  color: #ffffff;
+  border-radius: 28px;
+  padding: 2.5rem;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+}
+
+.results-glow {
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 200px;
+  height: 200px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  filter: blur(40px);
+}
+
+.results-top-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #bbf7d0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.results-amount {
+  font-family: var(--font-heading);
+  font-size: 3.2rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.1;
+  margin-bottom: 0.25rem;
+}
+
+.results-period {
+  font-size: 0.75rem;
+  color: #dcfce7;
+  margin-bottom: 2rem;
+}
+
+.results-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  width: 100%;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  text-align: left;
+}
+
+.stat-icon-green {
+  color: #bbf7d0;
+  flex-shrink: 0;
+}
+
+.stat-icon-amber {
+  color: #fde68a;
+  flex-shrink: 0;
+}
+
+.stat-number {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.stat-name {
+  font-size: 0.75rem;
+  color: #dcfce7;
+  font-weight: 500;
+}
+
+.calc-apply-btn {
+  width: 100%;
+  padding: 0.95rem;
+  font-size: 1rem;
+}

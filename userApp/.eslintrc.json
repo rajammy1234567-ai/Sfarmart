@@ -1,0 +1,16 @@
+{
+  "extends": "expo",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["*mockData*", "**/mockData*"],
+            "message": "mockData is permanently banned from render paths. All data must be fetched from MongoDB via apiService."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,137 @@
+.about-section {
+  background-color: var(--surface-white);
+}
+
+.mission-vision-wrapper {
+  max-width: 950px;
+  margin: 0 auto;
+}
+
+.mv-tab-selector {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.mv-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: 9999px;
+  background-color: var(--surface-cream);
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.mv-tab:hover {
+  background-color: #ffffff;
+  color: var(--primary-green);
+  border-color: var(--border-green);
+}
+
+.mv-tab.active {
+  background: linear-gradient(135deg, var(--primary-emerald) 0%, var(--primary-green) 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 10px 25px -5px rgba(22, 163, 74, 0.4);
+}
+
+.mv-display-box {
+  background-color: var(--surface-cream);
+  border-radius: 28px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.mv-card {
+  display: grid;
+  grid-template-columns: 0.75fr 1.25fr;
+  gap: 2rem;
+  align-items: center;
+  padding: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .mv-card {
+    grid-template-columns: 1fr;
+    padding: 1.25rem;
+  }
+}
+
+.mv-img-side {
+  width: 100%;
+  height: 260px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.mv-side-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mv-badge-pill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.05em;
+}
+
+.green-pill {
+  background-color: var(--primary-light);
+  color: var(--primary-green);
+}
+
+.amber-pill {
+  background-color: var(--earth-sand);
+  color: var(--earth-amber);
+}
+
+.mv-text-content h3 {
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+  line-height: 1.25;
+}
+
+.mv-text-content p {
+  font-size: 0.98rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
+}
+
+.mv-checklist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.mv-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.mv-checklist li svg {
+  color: var(--primary-emerald);
+  flex-shrink: 0;
+}

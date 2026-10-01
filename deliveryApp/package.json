@@ -1,0 +1,38 @@
+{
+  "name": "deliveryapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@expo/metro-runtime": "^57.0.8",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/bottom-tabs": "^7.18.15",
+    "@react-navigation/native": "^7.3.15",
+    "@react-navigation/native-stack": "^7.18.7",
+    "axios": "^1.19.0",
+    "expo": "~57.0.25",
+    "expo-dev-client": "57.0.19",
+    "expo-font": "~57.0.4",
+    "expo-location": "^57.0.20",
+    "expo-status-bar": "~57.0.1",
+    "expo-task-manager": "^57.0.20",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-google-places-autocomplete": "2.6.5",
+    "react-native-maps": "1.27.2",
+    "react-native-maps-directions": "^1.9.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "^4.26.2",
+    "react-native-web": "^0.21.2",
+    "socket.io-client": "^4.8.3"
+  },
+  "scripts": {
+    "start": "expo start --port 8083",
+    "tunnel": "expo start --tunnel --port 8083",
+    "android": "expo start --android --port 8083",
+    "ios": "expo start --ios --port 8083",
+    "web": "expo start --web --port 8083"
+  },
+  "private": true
+}

@@ -1,0 +1,14 @@
+.git
+node_modules
+dist
+build
+*.env
+*.env.*
+*.key
+*.pem
+*.crt
+*.pub
+*.json
+staging-fixture-manifest.json
+*.log
+*.tmp

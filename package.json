@@ -1,0 +1,42 @@
+{
+  "name": "freemart",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "vite",
+    "server": "node server/server.js",
+    "test": "node server/utils/runAcceptanceTests.js",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test:delivery": "node --test server/tests/delivery.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.7.0",
+    "express-validator": "^7.3.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^1.28.0",
+    "mongoose": "^9.9.1",
+    "nodemailer": "^9.0.5",
+    "razorpay": "^2.9.8",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
+  }
+}

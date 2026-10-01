@@ -1,0 +1,230 @@
+/* ==========================================================================
+   FARMART COMING SOON - STYLES
+   ========================================================================== */
+
+.coming-soon-wrapper {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #051a13 0%, #0a2d21 50%, #061912 100%);
+  position: relative;
+  overflow: hidden;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+
+/* Ambient glow orbs */
+.ambient-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.35;
+  animation: floatOrb 12s ease-in-out infinite alternate;
+}
+
+.orb-primary {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(5, 150, 105, 0) 70%);
+  top: -10%;
+  right: -5%;
+}
+
+.orb-secondary {
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0) 70%);
+  bottom: -10%;
+  left: -5%;
+  animation-delay: -6s;
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(30px, -40px) scale(1.1);
+  }
+}
+
+/* Card Container */
+.coming-soon-card {
+  position: relative;
+  z-index: 2;
+  max-width: 680px;
+  width: 100%;
+  background: rgba(13, 43, 33, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 28px;
+  padding: 3.5rem 2.5rem;
+  text-align: center;
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  animation: cardFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes cardFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Brand badge & logo */
+.brand-badge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.brand-logo-img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 20px;
+  border: 2px solid rgba(52, 211, 153, 0.35);
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.3);
+  transition: transform 0.3s ease;
+}
+
+.brand-logo-img:hover {
+  transform: scale(1.05);
+}
+
+.live-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 1rem;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 9999px;
+  color: #6ee7b7;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.pulsing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+/* Headline */
+.coming-soon-headline {
+  margin: 0 0 1.25rem 0;
+  font-family: var(--font-heading, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.brand-name-accent {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 60%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.status-text {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+/* Tagline */
+.coming-soon-tagline {
+  color: #94a3b8;
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  margin: 0 auto;
+  max-width: 500px;
+}
+
+/* Divider */
+.coming-soon-divider {
+  width: 60px;
+  height: 3px;
+  background: linear-gradient(90deg, #10b981, #f59e0b);
+  border-radius: 2px;
+  margin: 2rem auto;
+  opacity: 0.8;
+}
+
+/* Subtext */
+.coming-soon-subtext {
+  color: #cbd5e1;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  margin: 0 auto 2.5rem auto;
+  max-width: 520px;
+}
+
+/* Footer note */
+.coming-soon-footer {
+  color: #64748b;
+  font-size: 0.82rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+/* Responsive queries */
+@media (max-width: 640px) {
+  .coming-soon-card {
+    padding: 2.5rem 1.5rem;
+    border-radius: 22px;
+  }
+
+  .brand-logo-img {
+    width: 76px;
+    height: 76px;
+  }
+
+  .coming-soon-divider {
+    margin: 1.5rem auto;
+  }
+}

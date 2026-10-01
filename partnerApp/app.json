@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "S-farmart Partner",
+    "slug": "sfarmart-partner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sfarmart.partner"
+    },
+    "android": {
+      "package": "com.sfarmart.partner",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#15803d"
+      },
+      "permissions": [
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "59989093-917c-4e06-9cfd-15ab65aa3aee"
+      }
+    },
+    "owner": "sfarmart"
+  }
+}

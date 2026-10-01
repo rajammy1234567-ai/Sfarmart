@@ -1,0 +1,314 @@
+.contact-page-wrapper {
+  padding-top: 5rem;
+  background-color: var(--surface-cream);
+}
+
+.cp-hero-section {
+  padding: 3.5rem 0 2rem 0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #fafaf9 100%);
+}
+
+.cp-hero-card {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 3rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-green);
+  max-width: 900px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.cp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.1rem;
+  border-radius: 9999px;
+  background-color: var(--primary-light);
+  border: 1px solid var(--border-green);
+  color: var(--primary-green);
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.cp-hero-title {
+  font-size: 3rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+}
+
+.cp-hero-desc {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  max-width: 680px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.cp-two-column-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 2.5rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 992px) {
+  .cp-two-column-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Left Form Card */
+.cp-form-card {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 2.5rem;
+  border: 1px solid var(--border-green);
+  box-shadow: 0 20px 40px -10px rgba(22, 163, 74, 0.15);
+}
+
+.form-card-header h3 {
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.2rem;
+}
+
+.form-sub-text {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+}
+
+.cp-chip-group {
+  margin-bottom: 1.25rem;
+}
+
+.cp-chip-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.cp-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cp-chip-btn {
+  background-color: var(--surface-cream);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.4rem 0.9rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cp-chip-btn:hover {
+  background-color: #ffffff;
+  color: var(--primary-green);
+  border-color: var(--border-green);
+}
+
+.active-cp-chip {
+  background: linear-gradient(135deg, var(--primary-emerald) 0%, var(--primary-green) 100%) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+.cp-contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.cp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .cp-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cp-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cp-form-group.full-width-cp {
+  grid-column: 1 / -1;
+}
+
+.cp-form-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.cp-form-group input,
+.cp-form-group textarea {
+  padding: 0.8rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 16px !important;
+  outline: none;
+  background-color: #fafaf9;
+  transition: all 0.25s ease;
+}
+
+.cp-form-group input:focus,
+.cp-form-group textarea:focus {
+  background-color: #ffffff;
+  border-color: var(--primary-green);
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+}
+
+.cp-submit-btn {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  border-radius: 9999px;
+}
+
+.cp-success-state {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+}
+
+.cp-success-icon-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: var(--primary-light);
+  color: var(--primary-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.25rem auto;
+}
+
+.cp-ref-badge {
+  display: inline-block;
+  background-color: var(--surface-cream);
+  border: 1px solid var(--border-green);
+  color: var(--primary-green);
+  font-weight: 500;
+  padding: 0.4rem 1.25rem;
+  border-radius: 9999px;
+  margin-bottom: 1.5rem;
+}
+
+/* Right Info Side */
+.cp-office-card {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 2.25rem;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-md);
+}
+
+.cp-building-icon {
+  color: var(--primary-green);
+  background-color: var(--primary-light);
+  padding: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  box-sizing: content-box;
+  margin-bottom: 1rem;
+}
+
+.cp-office-card h3 {
+  font-size: 1.3rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.4rem;
+}
+
+.cp-office-addr {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1.75rem;
+}
+
+.cp-contact-links {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.cp-link-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.cp-icon-green { color: var(--primary-green); margin-top: 2px; }
+.cp-icon-amber { color: var(--earth-amber); margin-top: 2px; }
+
+.cp-link-item strong {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.cp-link-item p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.cp-sub-timing {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.cp-regional-presence h4 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+}
+
+.cp-hubs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.cp-hubs-grid span {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  background-color: var(--surface-cream);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  color: var(--text-muted);
+}

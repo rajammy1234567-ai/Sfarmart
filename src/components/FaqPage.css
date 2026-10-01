@@ -1,0 +1,223 @@
+.faq-page-wrapper {
+  padding-top: 5rem;
+  background-color: var(--surface-cream);
+}
+
+/* 1. Hero Banner */
+.faq-hero-section {
+  padding: 4rem 0 2.5rem 0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #fafaf9 100%);
+}
+
+.faq-hero-card {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 3.5rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-green);
+  max-width: 900px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .faq-hero-card {
+    padding: 2rem 1.5rem;
+  }
+}
+
+.faq-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.1rem;
+  border-radius: 9999px;
+  background-color: var(--primary-light);
+  border: 1px solid var(--border-green);
+  color: var(--primary-green);
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin-bottom: 1.25rem;
+}
+
+.faq-title {
+  font-size: 3.2rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 1rem;
+  line-height: 1.15;
+}
+
+.faq-sub {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.faq-search-box {
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.faq-search-icon {
+  position: absolute;
+  left: 1.25rem;
+  color: var(--text-muted);
+}
+
+.faq-search-box input {
+  width: 100%;
+  padding: 0.95rem 1rem 0.95rem 3.2rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+.faq-search-box input:focus {
+  border-color: var(--primary-green);
+}
+
+/* 2. Content & Accordion */
+.faq-content-section {
+  background-color: var(--surface-white);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.faq-tabs-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 3rem;
+}
+
+.faq-tab-btn {
+  padding: 0.65rem 1.4rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.faq-tab-btn:hover {
+  border-color: var(--border-green);
+  color: var(--primary-green);
+}
+
+.faq-tab-btn.active {
+  background-color: var(--primary-green);
+  color: #ffffff;
+  border-color: var(--primary-green);
+  box-shadow: 0 4px 12px rgba(21, 128, 61, 0.3);
+}
+
+/* Accordion UI */
+.faq-accordion-container {
+  max-width: 850px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.faq-accordion-item {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.5rem;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.faq-accordion-item.open {
+  border-color: var(--border-green);
+  box-shadow: var(--shadow-md);
+  background-color: var(--primary-light);
+}
+
+.faq-question-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.faq-question-text {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.faq-toggle-btn {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-green);
+  flex-shrink: 0;
+}
+
+.faq-answer-body {
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid rgba(22, 163, 74, 0.2);
+  font-size: 0.98rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.no-faq-found {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+
+/* Support Banner */
+.faq-support-banner {
+  padding: 4rem 0 6rem 0;
+  background-color: var(--surface-cream);
+}
+
+.faq-support-card {
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+  color: #ffffff;
+  border-radius: 32px;
+  padding: 3.5rem 2.5rem;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  max-width: 850px;
+  margin: 0 auto;
+}
+
+.faq-support-card h3 {
+  font-size: 2rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 0.75rem;
+}
+
+.faq-support-card p {
+  font-size: 1.05rem;
+  color: #dcfce7;
+  margin-bottom: 2rem;
+}

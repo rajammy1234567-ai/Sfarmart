@@ -1,0 +1,436 @@
+.farmer-network-page {
+  padding-top: 5rem;
+  background-color: #fdfbf7; /* Warm natural earthy background */
+}
+
+/* 1. Hero Banner */
+.fn-hero-section {
+  padding: 4rem 0 2.5rem 0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #fdfbf7 100%);
+}
+
+.fn-hero-card {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 3.5rem;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-green);
+  max-width: 950px;
+  margin: 0 auto;
+  text-align: center;
+  position: relative;
+}
+
+@media (max-width: 768px) {
+  .fn-hero-card {
+    padding: 2rem 1.5rem;
+  }
+}
+
+.fn-back-btn {
+  background: none;
+  border: none;
+  color: var(--primary-green);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 1.5rem;
+  transition: color 0.2s ease;
+}
+
+.fn-back-btn:hover {
+  color: var(--primary-emerald);
+  text-decoration: underline;
+}
+
+.fn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.1rem;
+  border-radius: 9999px;
+  background-color: var(--primary-light);
+  border: 1px solid var(--border-green);
+  color: var(--primary-green);
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin-bottom: 1.25rem;
+}
+
+.fn-hero-title {
+  font-size: 3.2rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+  line-height: 1.15;
+}
+
+.fn-tagline {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--earth-amber);
+  margin-bottom: 1.5rem;
+  font-style: italic;
+}
+
+.fn-intro-paragraph {
+  font-size: 1.18rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin-bottom: 2.25rem;
+  font-weight: 500;
+}
+
+.fn-hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+/* 3. What We Source Grid */
+.fn-source-section {
+  background-color: #ffffff;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.fn-source-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.75rem;
+}
+
+@media (max-width: 1024px) {
+  .fn-source-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .fn-source-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fn-source-card {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 2rem 1.5rem;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s ease;
+}
+
+.fn-source-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-green);
+}
+
+.fn-source-icon-box {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.fn-source-icon-box.green { background: #dcfce7; color: #15803d; }
+.fn-source-icon-box.amber { background: #fef3c7; color: #d97706; }
+.fn-source-icon-box.emerald { background: #f0fdf4; color: #16a34a; }
+.fn-source-icon-box.earth { background: #fff7ed; color: #c2410c; }
+
+.fn-source-title {
+  font-size: 1.3rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.65rem;
+}
+
+.fn-source-desc {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* 4. Why Farmers Choose Farmart */
+.fn-why-section {
+  background-color: #fdfbf7;
+}
+
+.fn-why-wrapper {
+  background: #ffffff;
+  border-radius: 32px;
+  padding: 3.5rem;
+  border: 1px solid var(--border-green);
+  box-shadow: var(--shadow-md);
+  max-width: 1050px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .fn-why-wrapper {
+    padding: 2rem 1.5rem;
+  }
+}
+
+.fn-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .fn-checklist-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fn-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background-color: #fafaf9;
+  padding: 1.25rem 1.4rem;
+  border-radius: 20px;
+  border: 1px solid var(--border-light);
+}
+
+.fn-check-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--primary-light);
+  color: var(--primary-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fn-check-title {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 0.35rem;
+}
+
+.fn-check-desc {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* 5. Produce Category Showcase */
+.fn-showcase-section {
+  background-color: #ffffff;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.showcase-block {
+  border-radius: 28px;
+  padding: 2.25rem;
+  margin-bottom: 2rem;
+  border: 1px solid var(--border-light);
+}
+
+.dairy-block {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border-color: #bbf7d0;
+}
+
+.veg-block {
+  background: linear-gradient(135deg, #fafaf9 0%, #f0fdf4 100%);
+  border-color: #bbf7d0;
+}
+
+.fruit-block {
+  background: linear-gradient(135deg, #fef3c7 0%, #fff7ed 100%);
+  border-color: #fde68a;
+}
+
+.showcase-header-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.showcase-icon-box {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dairy-icon { background: #ffffff; color: #16a34a; }
+.veg-icon { background: #ffffff; color: #15803d; }
+.fruit-icon { background: #ffffff; color: #d97706; }
+
+.showcase-category-tag {
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--primary-green);
+  letter-spacing: 0.05em;
+  display: inline-block;
+  margin-bottom: 0.2rem;
+}
+
+.green-tag { color: var(--primary-emerald); }
+.amber-tag { color: var(--earth-amber); }
+
+.showcase-promise {
+  font-family: var(--font-heading);
+  font-size: 1.45rem;
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.25;
+}
+
+.showcase-products-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.prod-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+}
+
+/* 6. Closing Tagline Banner */
+.fn-cta-section {
+  padding: 4rem 0 6rem 0;
+  background-color: #fdfbf7;
+}
+
+.fn-cta-card {
+  background: linear-gradient(135deg, #15803d 0%, #78350f 100%);
+  color: #ffffff;
+  border-radius: 32px;
+  padding: 4rem 2.5rem;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.fn-cta-leaf {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem auto;
+}
+
+.fn-cta-tagline {
+  font-size: 2.3rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.25;
+  margin-bottom: 1rem;
+}
+
+.fn-cta-sub {
+  font-size: 1.1rem;
+  color: #fde68a;
+  margin-bottom: 2.25rem;
+}
+
+.fn-main-btn {
+  padding: 1rem 2.5rem;
+  font-size: 1.1rem;
+}
+
+/* Modal */
+.fn-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.fn-modal-container {
+  background: #ffffff;
+  width: 100%;
+  max-width: 550px;
+  border-radius: 28px;
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.fn-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.fn-modal-header h3 {
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.fn-apply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fn-apply-form select {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-light);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+
+.fn-submit-success {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.fn-submit-success h4 {
+  font-size: 1.4rem;
+  margin: 1rem 0 0.5rem 0;
+}
+
+.fn-submit-success p {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
