@@ -538,7 +538,7 @@ export const CheckoutScreen = ({ navigation }) => {
       const vLng = vendorDetails.location.coordinates[0];
       const vLat = vendorDetails.location.coordinates[1];
       const dist = calculateHaversineDistanceKm(vLat, vLng, selectedPin.lat, selectedPin.lng);
-      const maxRadius = vendorDetails.deliveryRadiusKm || 10;
+      const maxRadius = vendorDetails.deliveryRadiusKm || 7;
       if (dist !== null && dist > maxRadius) {
         showAlert(
           'Location May Be Out of Delivery Range',
@@ -618,7 +618,7 @@ export const CheckoutScreen = ({ navigation }) => {
       const vLng = vendorDetails.location.coordinates[0];
       const vLat = vendorDetails.location.coordinates[1];
       const dist = calculateHaversineDistanceKm(vLat, vLng, deliveryAddress.lat, deliveryAddress.lng);
-      const maxRadius = vendorDetails.deliveryRadiusKm || 10;
+      const maxRadius = vendorDetails.deliveryRadiusKm || 7;
       if (dist !== null && dist > maxRadius) {
         showAlert(
           'Location Out of Delivery Range',
@@ -1468,7 +1468,7 @@ export const CheckoutScreen = ({ navigation }) => {
                       const vLng = vendorDetails.location.coordinates[0];
                       const vLat = vendorDetails.location.coordinates[1];
                       const dist = calculateHaversineDistanceKm(vLat, vLng, selectedPin.lat, selectedPin.lng);
-                      const maxRadius = vendorDetails.deliveryRadiusKm || 10;
+                      const maxRadius = vendorDetails.deliveryRadiusKm || 7;
                       const isOutOfRange = dist !== null && dist > maxRadius;
                       return (
                         <View

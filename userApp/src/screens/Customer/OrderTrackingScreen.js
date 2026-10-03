@@ -394,16 +394,18 @@ export const OrderTrackingScreen = ({ route, navigation }) => {
 
         setOrders(myOrders);
         if (myOrders.length > 0) {
+          const directTargetId = route.params?.orderId ? String(route.params.orderId) : null;
           setActiveOrder((prev) => {
-            if (prev?._id) {
-              const matched = myOrders.find((o) => String(o._id) === String(prev._id));
+            const targetId = directTargetId || (prev?._id ? String(prev._id) : null);
+            if (targetId) {
+              const matched = myOrders.find((o) => String(o._id) === targetId);
               if (matched) {
-                const prevStep = getStepIndex(prev.status);
+                const prevStep = prev ? getStepIndex(prev.status) : -1;
                 const matchedStep = getStepIndex(matched.status);
                 return {
-                  ...prev,
+                  ...(prev || {}),
                   ...matched,
-                  status: matchedStep >= prevStep ? matched.status : prev.status
+                  status: matchedStep >= prevStep ? matched.status : (prev?.status || matched.status)
                 };
               }
             }

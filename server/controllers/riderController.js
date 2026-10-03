@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { validCoordinates, activeDeliveryStates, idOf } from '../utils/deliveryPolicy.js';
+import { validCoordinates, activeDeliveryStates, idOf, distanceKm } from '../utils/deliveryPolicy.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Rider from '../models/Rider.js';
@@ -174,10 +174,45 @@ export const updateRiderLocation = async (req, res) => {
     if (!validCoordinates(lat,lng) || !Number.isFinite(accuracy) || accuracy<0 || accuracy>100 || !Number.isFinite(capturedAt) || Math.abs(Date.now()-capturedAt)>120000 || !Number.isFinite(speed) || speed<0 || speed>250 || !Number.isFinite(heading) || heading<0 || heading>360) {
       return res.status(400).json({success:false,message:'A fresh GPS fix with accuracy within 100 metres is required.'});
     }
-    const rider=await Rider.findById(riderId);
-    if (!rider) return res.status(404).json({success:false,message:'Rider not found.'});
-    if (orderId && idOf(rider.activeOrderId)!==String(orderId)) return res.status(403).json({success:false,message:'This delivery is not assigned to you.'});
-    const activeOrder = rider.activeOrderId ? await Order.findOne({_id:rider.activeOrderId,rider:riderId,status:{$in:activeDeliveryStates}}) : null;
+    const rider = await Rider.findById(riderId);
+    if (!rider) return res.status(404).json({ success: false, message: 'Rider not found.' });
+
+    // Guard against out-of-order or duplicate GPS timestamps
+    const prevTimestamp = rider.locationUpdatedAt ? new Date(rider.locationUpdatedAt).getTime() : 0;
+    if (prevTimestamp && capturedAt <= prevTimestamp) {
+      return res.status(400).json({ success: false, code: 'STALE_OR_OUT_OF_ORDER_GPS', message: 'GPS timestamp must be strictly newer than previous fix.' });
+    }
+
+    // Guard against impossible GPS jumps (speed > 140 km/h)
+    let effectiveHeading = heading;
+    if (rider.currentLocation?.coordinates?.length === 2 && prevTimestamp) {
+      const prevLng = rider.currentLocation.coordinates[0];
+      const prevLat = rider.currentLocation.coordinates[1];
+      const timeDiffSec = (capturedAt - prevTimestamp) / 1000;
+      if (timeDiffSec > 0 && timeDiffSec < 60) {
+        const jumpDistKm = distanceKm({ lat: prevLat, lng: prevLng }, { lat, lng });
+        const calculatedKmh = (jumpDistKm / timeDiffSec) * 3600;
+        if (calculatedKmh > 140) {
+          return res.status(400).json({
+            success: false,
+            code: 'IMPOSSIBLE_GPS_JUMP',
+            message: `Impossible GPS jump detected (${calculatedKmh.toFixed(0)} km/h). Fix discarded.`
+          });
+        }
+        // Smooth heading fallback if client heading is 0
+        if (!heading && jumpDistKm > 0.005) {
+          const dLng = ((lng - prevLng) * Math.PI) / 180;
+          const y = Math.sin(dLng) * Math.cos((lat * Math.PI) / 180);
+          const x =
+            Math.cos((prevLat * Math.PI) / 180) * Math.sin((lat * Math.PI) / 180) -
+            Math.sin((prevLat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.cos(dLng);
+          effectiveHeading = Math.round((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+        }
+      }
+    }
+
+    if (orderId && idOf(rider.activeOrderId) !== String(orderId)) return res.status(403).json({ success: false, message: 'This delivery is not assigned to you.' });
+    const activeOrder = rider.activeOrderId ? await Order.findOne({ _id: rider.activeOrderId, rider: riderId, status: { $in: activeDeliveryStates } }) : null;
     const now = Date.now();
     const state = locationRateLimiter.get(riderId) || { lastPingAt: 0, lastBreadcrumbAt: 0 };
 
@@ -205,24 +240,29 @@ export const updateRiderLocation = async (req, res) => {
           riderId,
           lat,
           lng,
-          heading,
+          heading: effectiveHeading,
           speed,
-          accuracy, at: new Date(capturedAt)
+          accuracy,
+          at: new Date(capturedAt)
         });
       }
+
+      // Keep Order.riderLocation fresh on active orders for instant reconnect snapshots
+      await Order.findByIdAndUpdate(activeOrderId, {
+        $set: { riderLocation: { lat, lng, speed, heading: effectiveHeading, accuracy, at: new Date(capturedAt) } }
+      });
 
       // Sparse breadcrumbs: write to MongoDB order.deliveryRoute only every ~30s
       if (now - state.lastBreadcrumbAt >= 30000) {
         state.lastBreadcrumbAt = now;
         await Order.findByIdAndUpdate(activeOrderId, {
-          $push: { deliveryRoute: { $each: [{lat,lng,at:new Date(capturedAt)}], $slice: -1000 } },
-          $set: { riderLocation: {lat,lng,speed,heading,accuracy,at:new Date(capturedAt)} }
+          $push: { deliveryRoute: { $each: [{ lat, lng, at: new Date(capturedAt) }], $slice: -1000 } }
         });
       }
     }
 
     locationRateLimiter.set(riderId, state);
-    res.json({ success: true, timestamp: now });
+    res.json({ success: true, timestamp: now, heading: effectiveHeading });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error updating rider location', error: error.message });
   }
@@ -281,7 +321,10 @@ export const acceptOrderOffer = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Order accepted successfully! Proceed to store for pickup.',
+      message: result.isDuplicate
+        ? 'Order already accepted.'
+        : 'Order accepted successfully! Proceed to store for pickup.',
+      isDuplicate: Boolean(result.isDuplicate),
       order: result.order
     });
   } catch (error) {

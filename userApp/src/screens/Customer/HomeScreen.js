@@ -45,7 +45,7 @@ export const HomeScreen = ({ navigation }) => {
     try {
       // Use Promise.allSettled to eliminate unhandled promise rejections
       const [catResult, vendResult] = await Promise.allSettled([
-        apiService.getCategories(),
+        apiService.getHomeCategories(),
         apiService.getVendors()
       ]);
 
@@ -62,7 +62,7 @@ export const HomeScreen = ({ navigation }) => {
         setHasCategoriesLoaded(true);
       } else if (catRes && !catRes.success) {
         console.warn('HomeScreen: Categories API unreachable or failed:', catRes);
-        // On failure, preserve previously loaded categories and do not mark as coming soon
+        // On failure, preserve previously loaded categories without clearing or fabricating
       }
 
       // Handle vendors response
@@ -263,65 +263,50 @@ export const HomeScreen = ({ navigation }) => {
             </View>
 
             {/* 1. Category-First Grid (Dynamic Categories count from MongoDB) */}
-            <View style={styles.categorySection}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>WHAT ARE YOU LOOKING FOR?</Text>
-                <Text style={styles.sectionBadge}>
-                  {filteredCategories.length} {filteredCategories.length === 1 ? 'Category' : 'Categories'}
-                </Text>
-              </View>
+            {filteredCategories.length > 0 && (
+              <View style={styles.categorySection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionHeading}>WHAT ARE YOU LOOKING FOR?</Text>
+                  <Text style={styles.sectionBadge}>
+                    {filteredCategories.length} {filteredCategories.length === 1 ? 'Category' : 'Categories'}
+                  </Text>
+                </View>
 
-              <View style={styles.categoryGrid}>
-                {filteredCategories.map((cat) => {
-                  // Only mark as unavailable if real categories were actually loaded from API
-                  // and this specific category was verified to be missing from the database.
-                  const isVerifiedUnavailable = hasCategoriesLoaded && cat.isAvailableInDb === false;
-                  return (
+                <View style={styles.categoryGrid}>
+                  {filteredCategories.map((cat, idx) => (
                     <TouchableOpacity
-                      key={cat.key || cat.canonicalSlug || cat._id}
-                      style={[
-                        styles.catCard,
-                        isVerifiedUnavailable && styles.catCardUnavailable
-                      ]}
+                      key={String(cat._id || cat.dbId || cat.key || cat.slug || idx)}
+                      style={styles.catCard}
                       onPress={() => navigation.navigate('CategoryVendors', { category: cat })}
                       activeOpacity={0.8}
                     >
                       <View
                         style={[
                           styles.catIconWrap,
-                          cat.bgColor ? { backgroundColor: cat.bgColor } : null,
-                          isVerifiedUnavailable && styles.catIconWrapUnavailable
+                          cat.bgColor ? { backgroundColor: cat.bgColor } : null
                         ]}
                       >
                         {cat.vectorIcon ? (
                           <Ionicons
                             name={cat.vectorIcon}
                             size={22}
-                            color={isVerifiedUnavailable ? '#94a3b8' : (cat.accentColor || colors.primary)}
+                            color={cat.accentColor || colors.primary}
                           />
                         ) : (
                           <Text style={styles.catIconText}>{cat.icon || '🥦'}</Text>
                         )}
                       </View>
                       <Text
-                        style={[
-                          styles.catName,
-                          isVerifiedUnavailable && styles.catNameUnavailable
-                        ]}
+                        style={styles.catName}
                         numberOfLines={2}
                       >
                         {cat.name}
                       </Text>
-                      {isVerifiedUnavailable && (
-                        <View style={styles.unavailableBadge}>
-                          <Text style={styles.unavailableBadgeText}>Soon</Text>
-                        </View>
-                      )}
                     </TouchableOpacity>
-                  );
-                })}
+                  ))}
+                </View>
               </View>
-            </View>
+            )}
 
             {/* 2. Popular Stores Near You */}
             <View style={styles.vendorSection}>

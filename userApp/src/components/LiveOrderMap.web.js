@@ -110,7 +110,8 @@ export const LiveOrderMap = ({ order, riderLocation, rider, travelledTrail = [] 
           const decoded = window.google.maps.geometry.encoding.decodePath(polylineStr);
           setRouteCoordinates(decoded.map((pt) => ({ lat: pt.lat(), lng: pt.lng() })));
         } else {
-          setRouteCoordinates([origin, destination]);
+          // Never present a straight line as a road route
+          setRouteCoordinates([]);
         }
         setRouteUnavailableMessage('');
       } else if (res && res.code === 'PROVIDER_UNCONFIGURED') {
@@ -245,7 +246,9 @@ export const LiveOrderMap = ({ order, riderLocation, rider, travelledTrail = [] 
         <View style={[styles.etaBadge, { backgroundColor: '#fffbeb', borderColor: '#fde68a' }]}>
           <Ionicons name="alert-circle" size={14} color="#d97706" />
           <Text style={[styles.etaBadgeText, { color: '#92400e' }]}>
-            {routeUnavailableMessage}
+            {Number.isFinite(straightLineKm)
+              ? `Distance: ~${straightLineKm.toFixed(1)} km (straight-line) • Driving road ETA unavailable`
+              : routeUnavailableMessage}
           </Text>
         </View>
       ) : isGpsStale ? (

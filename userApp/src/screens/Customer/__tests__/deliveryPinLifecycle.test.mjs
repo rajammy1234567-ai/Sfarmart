@@ -198,7 +198,7 @@ test('Requirement 7: Block Checkout Submission Without Confirmed Pin & Respect S
       const vLng = vendorDetails.location.coordinates[0];
       const vLat = vendorDetails.location.coordinates[1];
       const dist = calculateHaversineDistanceKm(vLat, vLng, deliveryAddress.lat, deliveryAddress.lng);
-      const maxRadius = vendorDetails.deliveryRadiusKm || 10;
+      const maxRadius = vendorDetails.deliveryRadiusKm || 7;
       if (dist !== null && dist > maxRadius) {
         return { allowed: false, reason: 'OUT_OF_RANGE', dist, maxRadius };
       }

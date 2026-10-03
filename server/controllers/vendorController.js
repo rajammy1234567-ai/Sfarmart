@@ -3,6 +3,7 @@ import {validCoordinates,orderForRole} from '../utils/deliveryPolicy.js';
 import Vendor from '../models/Vendor.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import Category from '../models/Category.js';
 
 export const getAllVendors = async (req, res) => {
   try {
@@ -16,7 +17,21 @@ export const getAllVendors = async (req, res) => {
       query.isOpen = true;
     }
     if (category) {
-      query.categories = category;
+      if (mongoose.isValidObjectId(category)) {
+        const catDoc = await Category.findOne({ _id: category, isActive: true });
+        if (catDoc) {
+          query.categories = catDoc._id;
+        } else {
+          return res.json({ success: true, count: 0, vendors: [] });
+        }
+      } else {
+        const catDoc = await Category.findOne({ slug: category.toLowerCase().trim(), isActive: true });
+        if (catDoc) {
+          query.categories = catDoc._id;
+        } else {
+          return res.json({ success: true, count: 0, vendors: [] });
+        }
+      }
     }
 
     const vendors = await Vendor.find(query)

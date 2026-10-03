@@ -9,6 +9,7 @@ import PartnersPage from './pages/PartnersPage';
 import JobsPage from './pages/JobsPage';
 import RidersPage from './pages/RidersPage';
 import InquiriesPage from './pages/InquiriesPage';
+import CategoriesPage from './pages/CategoriesPage';
 
 const ProtectedRoute = ({ children }) => {
   const { admin, loading } = useAuth();
@@ -28,6 +29,7 @@ function AppRoutes() {
       
       <Route path="/" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
         <Route index element={<DashboardPage />} />
+        <Route path="categories" element={<CategoriesPage />} />
         <Route path="inquiries" element={<InquiriesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="partners" element={<PartnersPage />} />

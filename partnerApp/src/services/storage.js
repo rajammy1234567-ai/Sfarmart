@@ -89,6 +89,15 @@ export const storage = {
   async clearAuth() {
     await this.removeItem(VENDOR_DATA_KEY);
     await this.removeItem(VENDOR_TOKEN_KEY);
+  },
+
+  async getDeviceId() {
+    let id = await this.getItem('sfarmart_partner_device_id');
+    if (!id) {
+      id = 'dev_vendor_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+      await this.setItem('sfarmart_partner_device_id', id);
+    }
+    return id;
   }
 };
 

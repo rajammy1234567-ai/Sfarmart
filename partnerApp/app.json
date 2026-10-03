@@ -21,11 +21,21 @@
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS"
       ],
       "softwareKeyboardLayoutMode": "resize"
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#15803d"
+        }
+      ]
+    ],
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
     "extra": {

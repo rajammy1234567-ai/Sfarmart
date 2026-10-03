@@ -138,6 +138,8 @@ export const riderApi = {
   login: (phone, password) => api.post('/rider/auth/login', { phone, password }),
   logout: () => api.post('/rider/auth/logout'),
   getProfile: () => api.get('/rider/profile'),
+  registerPushToken: (data) => api.post('/auth/push-token', data),
+  unregisterPushToken: (data) => api.post('/auth/push-token/unregister', data),
 
   // Duty Status & Location
   toggleDuty: (status) => api.patch('/rider/status', { status }),

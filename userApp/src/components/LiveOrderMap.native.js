@@ -171,15 +171,26 @@ export const LiveOrderMap = ({ order, riderLocation, rider, travelledTrail = [] 
               gpsAgeSeconds: res.gpsAgeSeconds ?? null,
               etaStatus: res.etaStatus || 'LIVE'
             });
-            if (Array.isArray(res.polyline)) {
+            if (Array.isArray(res.polyline) && res.polyline.length > 0) {
               setBackendRoute(res.polyline.map((pt) => ({ latitude: pt.lat, longitude: pt.lng })));
+            } else {
+              setBackendRoute(null);
             }
             setRouteUnavailableMessage('');
           } else if (res && res.code === 'PROVIDER_UNCONFIGURED') {
+            setRouteInfo(null);
+            setBackendRoute(null);
             setRouteUnavailableMessage('Road route & driving ETA unconfigured on server. Set GOOGLE_MAPS_SERVER_KEY.');
+          } else {
+            setRouteInfo(null);
+            setBackendRoute(null);
+            setRouteUnavailableMessage(res?.message || 'Driving route provider unavailable.');
           }
         }).catch(() => {
           isFetchingRouteRef.current = false;
+          setRouteInfo(null);
+          setBackendRoute(null);
+          setRouteUnavailableMessage('Driving route provider unavailable.');
         });
       }
     }
@@ -234,6 +245,10 @@ export const LiveOrderMap = ({ order, riderLocation, rider, travelledTrail = [] 
   const initialLat = currentRiderLat || storeLat || destLat || 20.59;
   const initialLng = currentRiderLng || storeLng || destLng || 78.96;
 
+  const straightLineKm = (origin && destination)
+    ? distanceKm({ lat: origin.latitude, lng: origin.longitude }, { lat: destination.latitude, lng: destination.longitude })
+    : null;
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -264,6 +279,15 @@ export const LiveOrderMap = ({ order, riderLocation, rider, travelledTrail = [] 
               : currentRiderLat
               ? `Rider is ${routeInfo.distance.toFixed(1)} km away • Arriving in ~${Math.ceil(routeInfo.duration)} mins ${routeInfo.isStale ? `(Stale GPS: ${routeInfo.gpsAgeSeconds ?? '30+'}s ago)` : ''}`
               : `Store to doorstep: ${routeInfo.distance.toFixed(1)} km • ~${Math.ceil(routeInfo.duration)} mins`}
+          </Text>
+        </View>
+      ) : routeUnavailableMessage ? (
+        <View style={[styles.etaBadge, { backgroundColor: '#fffbeb', borderColor: '#fde68a' }]}>
+          <Ionicons name="alert-circle" size={14} color="#d97706" />
+          <Text style={[styles.etaBadgeText, { color: '#92400e' }]}>
+            {Number.isFinite(straightLineKm)
+              ? `Distance: ~${straightLineKm.toFixed(1)} km (straight-line) • Driving road ETA unavailable`
+              : routeUnavailableMessage}
           </Text>
         </View>
       ) : isStale ? (

@@ -2,6 +2,8 @@ import io from 'socket.io-client';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Category from '../models/Category.js';
+import connectDB from '../config/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +23,31 @@ function recordTest(name, passed, details = '') {
 }
 
 async function runTests() {
+  // Initialize DB connection (staging safeguards apply)
+  let dbOk = false;
+  try {
+    dbOk = await connectDB();
+  } catch (e) {
+    console.error('🛑 DB connection error during test setup:', e.message);
+    dbOk = false;
+  }
+
+  // Ensure categories are seeded for tests if DB is available
+  if (dbOk) {
+    const catCount = await Category.countDocuments();
+    if (catCount === 0) {
+      await Category.insertMany([
+        { name: 'Fruits', slug: 'fruits', type: 'GROCERY', homeVisibility: true },
+        { name: 'Vegetables', slug: 'vegetables', type: 'GROCERY' },
+        { name: 'Dairy', slug: 'dairy', type: 'GROCERY' },
+        { name: 'Bakery', slug: 'bakery', type: 'GROCERY' },
+        { name: 'Snacks', slug: 'snacks', type: 'GROCERY' },
+        { name: 'Beverages', slug: 'beverages', type: 'GROCERY' },
+        { name: 'Prepared Meals', slug: 'prepared-meals', type: 'FOOD' },
+        { name: 'Desserts', slug: 'desserts', type: 'FOOD' }
+      ]);
+    }
+  }
   console.log('\n=========================================');
   console.log('🌾 FARMART PRODUCTION ACCEPTANCE TEST SUITE');
   console.log('=========================================\n');
@@ -28,11 +55,19 @@ async function runTests() {
   try {
     // 1. Categories API
     const catRes = await fetch(`${API_BASE}/categories`).then((r) => r.json());
-    recordTest(
-      'TC-01: Category Listing API returns exactly 8 seeded categories',
-      catRes.success && catRes.count === 8,
-      `Found ${catRes.count} categories`
-    );
+    if (dbOk) {
+      recordTest(
+        'TC-01: Category Listing API returns exactly 8 seeded categories',
+        catRes.success && catRes.count === 8,
+        `Found ${catRes.count} categories`
+      );
+    } else {
+      recordTest(
+        'TC-01: Category Listing API (skipped - DB unavailable)',
+        false,
+        'DB connection not established; test skipped'
+      );
+    }
 
     // 2. Vendors API
     const vendRes = await fetch(`${API_BASE}/vendors`).then((r) => r.json());
@@ -100,7 +135,13 @@ async function runTests() {
           { productId: sunitaItem._id, qty: 1 },
           { productId: sukhwinderItem._id, qty: 1 }
         ],
-        address: { name: 'Rajesh', phone: '9876543210', line1: 'Model Town' }
+        address: {
+          name: 'Rajesh',
+          phone: '9876543210',
+          line1: 'Model Town',
+          lat: sunita.vendor?.address?.location?.coordinates[1] || 30.900965,
+          lng: sunita.vendor?.address?.location?.coordinates[0] || 75.857276
+        }
       })
     });
     const multiVendorData = await multiVendorRes.json();
@@ -162,7 +203,13 @@ async function runTests() {
         clientOrderId: `test-ord-${Date.now()}`,
         vendorId: sunita._id,
         items: [{ productId: sunitaItem._id, qty: orderQty }],
-        address: { name: 'Rajesh Kumar', phone: '9876543210', line1: 'Flat 302, Green Avenue' },
+        address: {
+          name: 'Rajesh Kumar',
+          phone: '9876543210',
+          line1: 'Flat 302, Green Avenue',
+          lat: sunita.vendor?.address?.location?.coordinates[1] || 30.900965,
+          lng: sunita.vendor?.address?.location?.coordinates[0] || 75.857276
+        },
         paymentMethod: 'COD'
       })
     });
@@ -261,7 +308,13 @@ async function runTests() {
       body: JSON.stringify({
         vendorId: sunita._id,
         items: [{ productId: rollItem._id, qty: 2 }],
-        address: { name: 'Rajesh', phone: '9876543210', line1: 'Model Town' }
+        address: {
+          name: 'Rajesh',
+          phone: '9876543210',
+          line1: 'Model Town',
+          lat: sunita.vendor?.address?.location?.coordinates[1] || 30.900965,
+          lng: sunita.vendor?.address?.location?.coordinates[0] || 75.857276
+        }
       })
     });
     const rejectTestOrder = await rejectOrderRes.json();

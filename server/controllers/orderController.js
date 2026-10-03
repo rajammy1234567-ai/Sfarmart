@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { validCoordinates, canAccessOrder, canTransition, distanceKm, storePoint } from '../utils/deliveryPolicy.js';
+import { validCoordinates, canAccessOrder, canTransition, distanceKm, storePoint, orderForRole } from '../utils/deliveryPolicy.js';
 import Rider from '../models/Rider.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
@@ -116,9 +116,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (!validCoordinates(address?.lat, address?.lng) || !address?.line1?.trim() || !address?.name?.trim() || !/^[+\d\s-]{10,16}$/.test(address?.phone || '')) {
-      return res.status(400).json({ success: false, code: 'DELIVERY_ADDRESS_REQUIRED', message: 'Enter recipient, phone, address and confirm a valid delivery pin.' });
-    }
+    // Address validation moved after vendor open check
+
+
     if (paymentMethod !== 'COD') {
       return res.status(400).json({ success: false, code: 'PAYMENT_NOT_CONFIGURED', message: 'Online payment verification is not configured. Please choose Cash on Delivery.' });
     }
@@ -164,14 +164,22 @@ export const createOrder = async (req, res) => {
     const singleVendorId = Array.from(vendorIdsInCart)[0];
     const vendorDoc = dbProducts[0].vendor;
 
-    // 5. Check if vendor is open
+    // 5. Check if vendor is open – moved before address validation to prioritize VENDOR_CLOSED error
     if (!vendorDoc.isOpen) {
+      // Vendor is closed; reject order creation early
       return res.status(400).json({
         success: false,
         code: 'VENDOR_CLOSED',
         message: `${vendorDoc.storeName} is currently closed and not accepting new orders.`
       });
     }
+
+    // 6. Validate delivery address after vendor open check
+    if (!validCoordinates(address?.lat, address?.lng) || !address?.line1?.trim() || !address?.name?.trim() || !/^[+\d\s-]{10,16}$/.test(address?.phone || '')) {
+      return res.status(400).json({ success: false, code: 'DELIVERY_ADDRESS_REQUIRED', message: 'Enter recipient, phone, address and confirm a valid delivery pin.' });
+    }
+
+
 
     // 6. Verify stock availability and recalculate line totals
     const orderItems = [];
@@ -210,6 +218,20 @@ export const createOrder = async (req, res) => {
         success: false,
         code: 'MIN_ORDER_NOT_MET',
         message: `Minimum order value for ${vendorDoc.storeName} is ₹${vendorDoc.minOrderValue}. Current cart items total is ₹${itemsTotal}.`
+      });
+    }
+
+    // 8. Validate store serviceability and delivery distance
+    // NOTE: Vendor schema field is "deliveryRadiusKm" (not "deliveryRadius").
+    // Using the wrong field name silently disables per-vendor radius enforcement.
+    const storeLoc = storePoint(vendorDoc);
+    const distToCustomer = distanceKm(storeLoc, { lat: address.lat, lng: address.lng });
+    const maxServiceRadiusKm = vendorDoc.deliveryRadiusKm || 7;
+    if (Number.isFinite(distToCustomer) && distToCustomer > maxServiceRadiusKm) {
+      return res.status(400).json({
+        success: false,
+        code: 'STORE_UNSERVICEABLE',
+        message: `Delivery location is ${distToCustomer.toFixed(1)} km away, which exceeds ${vendorDoc.storeName}'s delivery area of ${maxServiceRadiusKm} km.`
       });
     }
 
@@ -556,6 +578,7 @@ export const getDeliveryOrders = async (req, res) => {
 // @desc    Update Order Status with state machine & stock rollback
 // @route   PATCH /api/orders/:id/status
 export const updateOrderStatus = async (req, res) => {
+  console.log('updateOrderStatus invoked', { userId: req.user?.id, role: req.user?.role, orderId: req.params.id, newStatus: req.body.status });
   try {
     const { id } = req.params;
     const { status, rejectionReason } = req.body;
@@ -572,6 +595,7 @@ export const updateOrderStatus = async (req, res) => {
     ];
 
     if (!allowedStatuses.includes(status)) {
+    console.log('Invalid status transition attempted', { attemptedStatus: status });
       return res.status(400).json({
         success: false,
         code: 'INVALID_STATUS',
@@ -584,7 +608,10 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
-    if (!canTransition(req.user, order, status)) return res.status(403).json({ success: false, code: 'INVALID_TRANSITION', message: 'This account cannot perform this order transition. Delivery requires assigned rider OTP verification.' });
+    // Enforce state machine transition for all environments
+    if (!canTransition(req.user, order, status)) {
+      return res.status(403).json({ success: false, code: 'INVALID_TRANSITION', message: 'Invalid state transition for this role.' });
+    }
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
@@ -592,11 +619,21 @@ export const updateOrderStatus = async (req, res) => {
           $set: { status, rejectionReason: rejectionReason || '' },
           $push: { statusHistory: { status, at: new Date(), by: req.user.role } }
         }, { new: true, session });
-        if (!updated) throw new Error('Order changed. Refresh before trying again.');
+        if (!updated) {
+          const conflictErr = new Error('Order state changed concurrently. Refresh before trying again.');
+          conflictErr.code = 'ORDER_CONFLICT';
+          conflictErr.statusCode = 409;
+          throw conflictErr;
+        }
         if (['CANCELLED', 'REJECTED'].includes(status)) {
           for (const item of order.items) await Product.findByIdAndUpdate(item.product, { $inc: { stockQty: item.qty }, $set: { inStock: true } }, { session });
         }
       });
+    } catch (txErr) {
+      if (txErr.code === 'ORDER_CONFLICT' || txErr.statusCode === 409) {
+        return res.status(409).json({ success: false, code: 'ORDER_CONFLICT', message: txErr.message });
+      }
+      throw txErr;
     } finally { await session.endSession(); }
     if (['CANCELLED', 'REJECTED'].includes(status)) {
       for (const item of order.items) { const product = await Product.findById(item.product); if (product) notifyProductStock(product); }
@@ -618,7 +655,7 @@ export const updateOrderStatus = async (req, res) => {
     res.json({
       success: true,
       message: `Order status updated to ${status}`,
-      order: populatedOrder
+      order: orderForRole(populatedOrder, req.user.role)
     });
   } catch (error) {
     console.error('Update order status error:', error);
@@ -685,4 +722,3 @@ export const getOrderRouteEta = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error retrieving route ETA' });
   }
 };
-

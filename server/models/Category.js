@@ -7,6 +7,11 @@ const categorySchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    nameNormalized: {
+      type: String,
+      lowercase: true,
+      trim: true
+    },
     slug: {
       type: String,
       required: true,
@@ -41,6 +46,11 @@ const categorySchema = new mongoose.Schema(
       type: Boolean,
       default: true
     },
+    // Admin-controlled visibility on Home page (separate from isActive)
+    homeVisibility: {
+      type: Boolean,
+      default: false
+    },
     isStagingFixture: {
       type: Boolean,
       default: false
@@ -53,6 +63,13 @@ const categorySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+categorySchema.pre('validate', function () {
+  if (this.name) {
+    this.nameNormalized = this.name.trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+});
+
 categorySchema.index({ type: 1, sortOrder: 1 });
+categorySchema.index({ nameNormalized: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model('Category', categorySchema);

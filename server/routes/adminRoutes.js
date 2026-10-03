@@ -1,5 +1,13 @@
 import express from 'express';
 import { adminLogin, createSubAdmin, getAdminData, updateApplicationStatus } from '../controllers/adminController.js';
+import {
+  getCategoryRequestsAdmin,
+  approveCategoryRequestAdmin,
+  rejectCategoryRequestAdmin,
+  mapCategoryRequestAdmin,
+  getAllCategoriesAdmin,
+  updateCategoryAdmin
+} from '../controllers/categoryController.js';
 import { verifyToken, requireRole, requireSuperAdmin, requireAdminModule } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -27,5 +35,15 @@ router.post(
   updateApplicationStatus
 );
 
-export default router;
+// =========================================================================
+// Category Moderation & Curation Endpoints (Admin Protected)
+// =========================================================================
+router.get('/category-requests', verifyToken, requireRole('ADMIN'), getCategoryRequestsAdmin);
+router.post('/category-requests/:id/approve', verifyToken, requireRole('ADMIN'), approveCategoryRequestAdmin);
+router.post('/category-requests/:id/reject', verifyToken, requireRole('ADMIN'), rejectCategoryRequestAdmin);
+router.post('/category-requests/:id/map', verifyToken, requireRole('ADMIN'), mapCategoryRequestAdmin);
 
+router.get('/categories', verifyToken, requireRole('ADMIN'), getAllCategoriesAdmin);
+router.patch('/categories/:id', verifyToken, requireRole('ADMIN'), updateCategoryAdmin);
+
+export default router;

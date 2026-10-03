@@ -10,6 +10,7 @@ import {
   LogOut,
   ShieldCheck,
   MessageSquare,
+  Layers,
   Menu,
   X
 } from 'lucide-react';
@@ -20,6 +21,7 @@ export default function AdminLayout() {
 
   const navigation = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, requiredAccess: 'all' },
+    { name: 'Categories & Taxonomy', path: '/categories', icon: Layers, requiredAccess: 'all' },
     { name: 'Inquiries & Leads', path: '/inquiries', icon: MessageSquare, requiredAccess: 'all' },
     { name: 'App Users', path: '/users', icon: Users, requiredAccess: 'users' },
     { name: 'Partners & Vendors', path: '/partners', icon: Building2, requiredAccess: 'partners' },

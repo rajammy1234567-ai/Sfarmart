@@ -1,17 +1,21 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config/env';
 import storage from '../services/storage';
+import { registerForPushNotificationsAsync, setNotificationAuthReady } from '../services/notificationService';
 
 const PartnerContext = createContext();
 
 export const PartnerProvider = ({ children }) => {
   const sessionRef = useRef({ id: null, token: null });
   const isClearingSessionRef = useRef(false);
+  const pushTokenRef = useRef(null);
+  const authEpochRef = useRef(0);
   const [vendor, setVendor] = useState(null);
   const [token, setToken] = useState(null);
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categoryRequests, setCategoryRequests] = useState([]);
   const [stats, setStats] = useState({
     todaySales: 0,
     todayOrdersCount: 0,
@@ -21,11 +25,70 @@ export const PartnerProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isTogglingStore, setIsTogglingStore] = useState(false);
 
+  // Sync push token with backend after vendor login/restore
+  const syncPushToken = useCallback(async (activeToken) => {
+    const epoch = authEpochRef.current;
+    if (!activeToken) return;
+    try {
+      const pushData = await registerForPushNotificationsAsync();
+      if (authEpochRef.current !== epoch) return;
+      if (pushData?.token) {
+        const deviceId = await storage.getDeviceId();
+        if (authEpochRef.current !== epoch) return;
+        await fetch(`${API_BASE_URL}/auth/push-token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${activeToken}`
+          },
+          body: JSON.stringify({
+            token: pushData.token,
+            platform: pushData.platform,
+            deviceId
+          })
+        });
+        if (authEpochRef.current === epoch) {
+          pushTokenRef.current = pushData.token;
+        }
+      }
+    } catch (err) {
+      console.warn('[PartnerPush] Failed to sync push token:', err);
+    }
+  }, []);
+
+  // Cleanup push token association on logout to prevent cross-account push leakage
+  const cleanupPushToken = useCallback(async (activeToken) => {
+    try {
+      const deviceId = await storage.getDeviceId();
+      if (activeToken) {
+        await fetch(`${API_BASE_URL}/auth/push-token/unregister`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${activeToken}`
+          },
+          body: JSON.stringify({
+            token: pushTokenRef.current,
+            deviceId
+          })
+        }).catch(() => {});
+      }
+      pushTokenRef.current = null;
+    } catch (err) {
+      console.warn('[PartnerPush] Failed to unregister push token:', err);
+    }
+  }, []);
+
   // Centralized session invalidation for expired or unauthorized (401) states
   const handleSessionExpired = useCallback(async (reason = 'Session expired') => {
     if (isClearingSessionRef.current) return;
     isClearingSessionRef.current = true;
     console.warn(`[PartnerSession] ${reason}. Invalidating session and returning to login.`);
+
+    const activeToken = token || sessionRef.current.token;
+    authEpochRef.current += 1;
+    setNotificationAuthReady(false);
+    await cleanupPushToken(activeToken);
 
     sessionRef.current = { id: null, token: null };
     setVendor(null);
@@ -46,12 +109,12 @@ export const PartnerProvider = ({ children }) => {
     } finally {
       isClearingSessionRef.current = false;
     }
-  }, []);
+  }, [cleanupPushToken, token]);
 
   // Fetch Categories for product creation (Public)
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/categories`);
+      const res = await fetch(`${API_BASE_URL}/categories?partner=true`);
       const data = await res.json();
       if (data.success && Array.isArray(data.categories)) {
         setCategories(data.categories);
@@ -80,6 +143,7 @@ export const PartnerProvider = ({ children }) => {
           name: p.name,
           category: p.category?.name || 'General',
           categoryId: p.category?._id,
+          subCategory: p.subCategory || '',
           price: p.price,
           mrp: p.mrp || p.price,
           unit: p.unit,
@@ -87,7 +151,8 @@ export const PartnerProvider = ({ children }) => {
           stockQty: p.stockQty,
           isAvailable: p.inStock,
           image: p.image,
-          description: p.description
+          description: p.description,
+          isVeg: p.isVeg !== undefined ? p.isVeg : true
         }));
         setInventory(mapped);
       }
@@ -164,6 +229,7 @@ export const PartnerProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success && data.vendor && data.token) {
+        authEpochRef.current += 1;
         sessionRef.current = { id: data.vendor._id, token: data.token };
         setStats({ todaySales: 0, todayOrdersCount: 0, activeOrdersCount: 0, allTimeDelivered: 0 });
         setVendor(data.vendor);
@@ -171,6 +237,8 @@ export const PartnerProvider = ({ children }) => {
         // Persist to storage
         await storage.setVendor(data.vendor);
         await storage.setToken(data.token);
+        setNotificationAuthReady(true);
+        syncPushToken(data.token);
         // Immediately clear previous vendor's orders and inventory
         setOrders([]);
         setInventory([]);
@@ -186,7 +254,7 @@ export const PartnerProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchInventory, fetchOrders, fetchStats]);
+  }, [fetchInventory, fetchOrders, fetchStats, syncPushToken]);
 
   // Initial load: Restore persistent session from device storage
   useEffect(() => {
@@ -239,9 +307,12 @@ export const PartnerProvider = ({ children }) => {
         }
 
         if (isMounted) {
+          authEpochRef.current += 1;
           sessionRef.current = { id: savedVendor._id, token: savedToken };
           setVendor(savedVendor);
           setToken(savedToken);
+          setNotificationAuthReady(true);
+          syncPushToken(savedToken);
           fetchInventory(savedVendor._id);
           fetchOrders(savedVendor._id, savedToken);
         }
@@ -255,7 +326,7 @@ export const PartnerProvider = ({ children }) => {
     return () => {
       isMounted = false;
     };
-  }, [fetchCategories, fetchInventory, fetchOrders]);
+  }, [fetchCategories, fetchInventory, fetchOrders, syncPushToken]);
 
   // Periodic fast polling fallback (every 5 seconds) - strictly requires active token & vendor
   useEffect(() => {
@@ -271,6 +342,9 @@ export const PartnerProvider = ({ children }) => {
   // Logout Vendor and clear persisted credentials immediately
   const logoutVendor = useCallback(async () => {
     const activeToken = token || sessionRef.current.token;
+    authEpochRef.current += 1;
+    setNotificationAuthReady(false);
+    await cleanupPushToken(activeToken);
 
     // 1. Immediately reset session ref to block any pending in-flight responses
     sessionRef.current = { id: null, token: null };
@@ -387,6 +461,7 @@ export const PartnerProvider = ({ children }) => {
         body: JSON.stringify({
           name: item.name,
           category: item.categoryId || item.category,
+          subCategory: item.subCategory || '',
           vendor: vendor?._id,
           price: Number(item.price),
           mrp: Number(item.mrp || item.price),
@@ -406,12 +481,121 @@ export const PartnerProvider = ({ children }) => {
         await fetchInventory(vendor?._id);
         return { success: true, product: data.product };
       }
-      return { success: false, message: data.message || 'Could not save product' };
+      return { success: false, code: data.code, message: data.message || 'Could not save product' };
     } catch (e) {
       console.warn('Failed to save product in MongoDB:', e);
       return { success: false, message: e.message || 'Network error' };
     }
   };
+
+  // Update Product permanently in MongoDB
+  const updateInventoryItem = async (itemId, item) => {
+    if (!token) return { success: false, message: 'Not authenticated' };
+    try {
+      const res = await fetch(`${API_BASE_URL}/products/${itemId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: item.name,
+          category: item.categoryId || item.category,
+          subCategory: item.subCategory !== undefined ? item.subCategory : '',
+          price: Number(item.price),
+          mrp: Number(item.mrp || item.price),
+          unit: item.unit || '1 pc',
+          stockQty: Number(item.stock || item.stockQty || 25),
+          description: item.description || '',
+          image: item.image,
+          isVeg: item.isVeg !== undefined ? item.isVeg : true
+        })
+      });
+      if (res.status === 401) {
+        await handleSessionExpired('Update product returned 401');
+        return { success: false, message: 'Session expired' };
+      }
+      const data = await res.json();
+      if (data.success && data.product) {
+        await fetchInventory(vendor?._id);
+        return { success: true, product: data.product };
+      }
+      return { success: false, code: data.code, message: data.message || 'Could not update product' };
+    } catch (e) {
+      console.warn('Failed to update product in MongoDB:', e);
+      return { success: false, message: e.message || 'Network error' };
+    }
+  };
+
+  // Request a new category for admin review (Moderated flow)
+  const requestCategory = async (requestData) => {
+    if (!token) return { success: false, message: 'Not authenticated' };
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories/request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(requestData)
+      });
+      if (res.status === 401) {
+        await handleSessionExpired('Category request returned 401');
+        return { success: false, message: 'Session expired' };
+      }
+      const data = await res.json();
+      if (res.status === 201 && data.request) {
+        setCategoryRequests((prev) => [data.request, ...prev]);
+        return { success: true, request: data.request, message: data.message };
+      }
+      if (res.status === 409) {
+        if (data.category) {
+          await fetchCategories();
+          return {
+            success: true,
+            exists: true,
+            category: data.category,
+            message: data.message
+          };
+        }
+        return {
+          success: false,
+          pending: true,
+          message: data.message
+        };
+      }
+      return { success: false, message: data.message || 'Failed to submit category request' };
+    } catch (e) {
+      console.warn('Failed to submit category request:', e);
+      return { success: false, message: e.message || 'Network error' };
+    }
+  };
+
+  // Fetch Vendor's Category Requests
+  const fetchMyCategoryRequests = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories/my-requests`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (res.status === 401) {
+        await handleSessionExpired('Fetch my category requests returned 401');
+        return;
+      }
+      const data = await res.json();
+      if (data.success && Array.isArray(data.requests)) {
+        setCategoryRequests(data.requests);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch category requests:', e);
+    }
+  }, [token, handleSessionExpired]);
+
+  // Backward-compatibility alias: redirects to requestCategory
+  const createCategory = requestCategory;
+
 
   // Toggle in-stock / out-of-stock
   const toggleItemAvailability = async (itemId) => {
@@ -513,10 +697,16 @@ export const PartnerProvider = ({ children }) => {
         inventory,
         fetchInventory,
         addInventoryItem,
+        updateInventoryItem,
         toggleItemAvailability,
         deleteInventoryItem,
         addStockToItem,
         categories,
+        fetchCategories,
+        categoryRequests,
+        fetchMyCategoryRequests,
+        requestCategory,
+        createCategory,
         stats,
         isLoading,
         logoutVendor,

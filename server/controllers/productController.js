@@ -4,6 +4,27 @@ import Category from '../models/Category.js';
 import Vendor from '../models/Vendor.js';
 import { notifyProductStock } from '../services/notify.js';
 
+// Synchronizes a vendor's categories array with the active products they currently sell
+export const syncVendorCategories = async (vendorId) => {
+  if (!vendorId || !mongoose.isValidObjectId(vendorId)) return;
+  try {
+    const activeCatIds = await Product.distinct('category', {
+      vendor: vendorId,
+      isActive: true
+    });
+    const validActiveCats = await Category.find({
+      _id: { $in: activeCatIds },
+      isActive: true
+    }).distinct('_id');
+
+    await Vendor.findByIdAndUpdate(vendorId, {
+      $set: { categories: validActiveCats }
+    });
+  } catch (err) {
+    console.error(`Error syncing vendor categories for ${vendorId}:`, err);
+  }
+};
+
 // @desc    Get all active products with filters and search
 // @route   GET /api/products
 export const getAllProducts = async (req, res) => {
@@ -17,19 +38,31 @@ export const getAllProducts = async (req, res) => {
     }
 
     // Category filter (support ObjectId or slug)
+    // Empty/unknown category filters must return 0 results and never show unrelated data
     if (category && category !== 'all') {
-      if (category.match(/^[0-9a-fA-F]{24}$/)) {
-        filter.category = category;
+      if (mongoose.isValidObjectId(category)) {
+        const catDoc = await Category.findOne({ _id: category, isActive: true });
+        if (catDoc) {
+          filter.category = catDoc._id;
+        } else {
+          return res.json({ success: true, count: 0, products: [] });
+        }
       } else {
-        const catDoc = await Category.findOne({ slug: category });
-        if (catDoc) filter.category = catDoc._id;
+        const catDoc = await Category.findOne({ slug: category.toLowerCase().trim(), isActive: true });
+        if (catDoc) {
+          filter.category = catDoc._id;
+        } else {
+          return res.json({ success: true, count: 0, products: [] });
+        }
       }
     }
 
     // Vendor filter
     if (vendor && vendor !== 'all') {
-      if (vendor.match(/^[0-9a-fA-F]{24}$/)) {
+      if (mongoose.isValidObjectId(vendor)) {
         filter.vendor = vendor;
+      } else {
+        return res.json({ success: true, count: 0, products: [] });
       }
     }
 
@@ -63,7 +96,7 @@ export const getAllProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!id || !mongoose.isValidObjectId(id)) {
       return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid product ID format' });
     }
     const product = await Product.findById(id)
@@ -90,9 +123,13 @@ export const getVendorProducts = async (req, res) => {
     let { vendorId } = req.params;
 
     // If 'default_vendor' or empty, find first active vendor
-    if (!vendorId || vendorId === 'default_vendor' || !vendorId.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!vendorId || vendorId === 'default_vendor' || !mongoose.isValidObjectId(vendorId)) {
       const firstVendor = await Vendor.findOne({ isActive: true });
       if (firstVendor) vendorId = firstVendor._id;
+    }
+
+    if (!vendorId || !mongoose.isValidObjectId(vendorId)) {
+      return res.json({ success: true, count: 0, products: [] });
     }
 
     const products = await Product.find({ vendor: vendorId, isActive: true })
@@ -118,6 +155,8 @@ export const createProduct = async (req, res) => {
       name,
       description,
       category,
+      categoryId: bodyCategoryId,
+      subCategory,
       price,
       mrp,
       unit,
@@ -139,23 +178,50 @@ export const createProduct = async (req, res) => {
     } else {
       vendorId = req.user?.vendorId || req.user?.id || req.user?._id;
     }
-    if (!vendorId || !vendorId.toString().match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(403).json({ success: false, message: 'Vendor authentication required to add a product.' });
+    if (!vendorId || !mongoose.isValidObjectId(vendorId)) {
+      return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Vendor authentication required to add a product.' });
     }
 
-    // Determine category ObjectId
-    let categoryId = category;
-    if (!categoryId || !categoryId.toString().match(/^[0-9a-fA-F]{24}$/)) {
-      let catDoc = null;
-      if (category) {
-        catDoc = await Category.findOne({
-          $or: [{ slug: category.toString().toLowerCase() }, { name: new RegExp(category, 'i') }]
+    // Strict category validation: require existing active category by real database ID
+    const rawCategory = bodyCategoryId || category;
+    if (!rawCategory || !mongoose.isValidObjectId(rawCategory)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CATEGORY',
+        message: 'Valid category database ID is required.'
+      });
+    }
+
+    const catDoc = await Category.findOne({ _id: rawCategory, isActive: true });
+    if (!catDoc) {
+      return res.status(400).json({
+        success: false,
+        code: 'CATEGORY_NOT_FOUND',
+        message: 'Referenced category does not exist or is inactive.'
+      });
+    }
+    const categoryId = catDoc._id;
+
+    // Subcategory validation: if provided, must be a member of the active parent category
+    let validatedSubCategory = '';
+    const rawSubCategory = typeof subCategory === 'string' ? subCategory.trim() : (subCategory ? String(subCategory).trim() : '');
+    if (rawSubCategory) {
+      const matchedSub = (catDoc.subCategories || []).find((s) => {
+        const sId = s._id ? s._id.toString() : '';
+        const sName = (s.name || '').trim().toLowerCase();
+        const sSlug = (s.slug || '').trim().toLowerCase();
+        const target = rawSubCategory.toLowerCase();
+        return sId === rawSubCategory || sName === target || sSlug === target;
+      });
+
+      if (!matchedSub) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_SUBCATEGORY',
+          message: `Subcategory "${rawSubCategory}" does not belong to active category "${catDoc.name}".`
         });
       }
-      if (!catDoc) {
-        catDoc = await Category.findOne({ slug: 'home-thali' }) || await Category.findOne();
-      }
-      categoryId = catDoc?._id;
+      validatedSubCategory = matchedSub.name;
     }
 
     const qty = stockQty !== undefined ? Number(stockQty) : stock !== undefined ? Number(stock) : 25;
@@ -166,6 +232,7 @@ export const createProduct = async (req, res) => {
       image: image || 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80',
       vendor: vendorId,
       category: categoryId,
+      subCategory: validatedSubCategory,
       price: Number(price),
       mrp: mrp ? Number(mrp) : Number(price) * 1.2,
       unit: unit || '1 pc',
@@ -176,6 +243,9 @@ export const createProduct = async (req, res) => {
     });
 
     const savedProduct = await (await newProduct.save()).populate('category vendor');
+
+    // Maintain vendor's category membership
+    await syncVendorCategories(vendorId);
 
     res.status(201).json({
       success: true,
@@ -210,6 +280,10 @@ export const parseNumericField = (val) => {
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid product ID format' });
+    }
+
     const existing = await Product.findById(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Product not found' });
@@ -252,13 +326,6 @@ export const updateProduct = async (req, res) => {
       updateData.unit = updateData.unit.trim().slice(0, 30);
     }
 
-    if (updateData.subCategory !== undefined) {
-      if (typeof updateData.subCategory !== 'string') {
-        return res.status(400).json({ success: false, code: 'INVALID_SUBCATEGORY', message: 'Subcategory must be a string.' });
-      }
-      updateData.subCategory = updateData.subCategory.trim().slice(0, 60);
-    }
-
     if (updateData.image !== undefined) {
       if (typeof updateData.image !== 'string') {
         return res.status(400).json({ success: false, code: 'INVALID_IMAGE', message: 'Product image must be a string.' });
@@ -266,9 +333,58 @@ export const updateProduct = async (req, res) => {
       updateData.image = updateData.image.trim().slice(0, 500);
     }
 
+    // Strict category validation: verify database ObjectId and active status
+    let parentCatDoc = null;
     if (updateData.category !== undefined) {
       if (!mongoose.isValidObjectId(updateData.category)) {
         return res.status(400).json({ success: false, code: 'INVALID_CATEGORY', message: 'Category must be a valid ObjectId.' });
+      }
+      parentCatDoc = await Category.findOne({ _id: updateData.category, isActive: true });
+      if (!parentCatDoc) {
+        return res.status(400).json({ success: false, code: 'CATEGORY_NOT_FOUND', message: 'Referenced category does not exist or is inactive.' });
+      }
+      updateData.category = parentCatDoc._id;
+    } else if (existing.category) {
+      parentCatDoc = await Category.findOne({ _id: existing.category, isActive: true });
+    }
+
+    // Strict subcategory validation: verify membership in the active parent category
+    if (updateData.subCategory !== undefined) {
+      if (typeof updateData.subCategory !== 'string') {
+        return res.status(400).json({ success: false, code: 'INVALID_SUBCATEGORY', message: 'Subcategory must be a string.' });
+      }
+      const rawSub = updateData.subCategory.trim();
+      if (rawSub) {
+        const matchedSub = (parentCatDoc?.subCategories || []).find((s) => {
+          const sId = s._id ? s._id.toString() : '';
+          const sName = (s.name || '').trim().toLowerCase();
+          const sSlug = (s.slug || '').trim().toLowerCase();
+          const target = rawSub.toLowerCase();
+          return sId === rawSub || sName === target || sSlug === target;
+        });
+
+        if (!matchedSub) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVALID_SUBCATEGORY',
+            message: `Subcategory "${rawSub}" does not belong to active category "${parentCatDoc?.name || 'selected'}".`
+          });
+        }
+        updateData.subCategory = matchedSub.name;
+      } else {
+        updateData.subCategory = '';
+      }
+    } else if (updateData.category !== undefined && existing.subCategory) {
+      // Parent category changed without explicit subcategory; clear if incompatible
+      const isStillValid = (parentCatDoc?.subCategories || []).some((s) => {
+        const sId = s._id ? s._id.toString() : '';
+        const sName = (s.name || '').trim().toLowerCase();
+        const sSlug = (s.slug || '').trim().toLowerCase();
+        const target = existing.subCategory.toLowerCase();
+        return sId === existing.subCategory || sName === target || sSlug === target;
+      });
+      if (!isStillValid) {
+        updateData.subCategory = '';
       }
     }
 
@@ -298,41 +414,50 @@ export const updateProduct = async (req, res) => {
 
     if (updateData.stockQty !== undefined) {
       const numStock = parseNumericField(updateData.stockQty);
-      if (numStock === null || !Number.isInteger(numStock) || numStock < 0) {
-        return res.status(400).json({ success: false, code: 'INVALID_STOCK', message: 'Stock quantity must be a non-negative integer.' });
+      if (numStock === null || numStock < 0) {
+        return res.status(400).json({ success: false, code: 'INVALID_STOCK', message: 'Stock must be a non-negative integer.' });
       }
-      updateData.stockQty = numStock;
+      const intStock = Math.floor(numStock);
+      updateData.stockQty = intStock;
       if (updateData.inStock === undefined) {
-        updateData.inStock = updateData.stockQty > 0;
+        updateData.inStock = intStock > 0;
       }
     }
 
-    for (const boolField of ['inStock', 'isVeg', 'isActive']) {
-      if (updateData[boolField] !== undefined) {
-        if (typeof updateData[boolField] !== 'boolean') {
-          return res.status(400).json({ success: false, code: 'INVALID_BOOLEAN', message: `${boolField} must be a boolean (true or false).` });
-        }
-      }
+    if (updateData.inStock !== undefined) {
+      updateData.inStock = Boolean(updateData.inStock);
+    }
+
+    if (updateData.isVeg !== undefined) {
+      updateData.isVeg = Boolean(updateData.isVeg);
+    }
+
+    if (updateData.isActive !== undefined) {
+      updateData.isActive = Boolean(updateData.isActive);
     }
 
     if (updateData.tags !== undefined) {
-      if (!Array.isArray(updateData.tags) || updateData.tags.some(t => typeof t !== 'string')) {
+      if (!Array.isArray(updateData.tags)) {
         return res.status(400).json({ success: false, code: 'INVALID_TAGS', message: 'Tags must be an array of strings.' });
       }
-      updateData.tags = updateData.tags.map(t => t.trim().toLowerCase().slice(0, 30)).filter(Boolean);
+      updateData.tags = updateData.tags
+        .filter((t) => typeof t === 'string' && t.trim())
+        .map((t) => t.trim().slice(0, 40));
     }
 
-    const product = await Product.findByIdAndUpdate(id, { $set: updateData }, { new: true })
-      .populate('category vendor');
+    const updated = await Product.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).populate('category vendor');
 
-    if (updateData.stockQty !== undefined || updateData.inStock !== undefined) {
-      notifyProductStock(product);
-    }
+    // Maintain vendor's category membership after category/status changes
+    await syncVendorCategories(existing.vendor);
 
     res.json({
       success: true,
       message: 'Product updated successfully',
-      product
+      product: updated
     });
   } catch (error) {
     console.error('Error updating product:', error);
@@ -345,6 +470,10 @@ export const updateProduct = async (req, res) => {
 export const toggleProductStock = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid product ID format' });
+    }
+
     const product = await Product.findById(id);
 
     if (!product) {
@@ -381,6 +510,9 @@ export const toggleProductStock = async (req, res) => {
     // Broadcast stock change to all connected customers and vendor apps in real-time
     notifyProductStock(product);
 
+    // Sync vendor categories
+    await syncVendorCategories(product.vendor);
+
     res.json({
       success: true,
       message: `Product stock updated to ${product.stockQty} units (${product.inStock ? 'In Stock' : 'Out of Stock'})`,
@@ -397,6 +529,10 @@ export const toggleProductStock = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || !mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid product ID format' });
+    }
+
     const product = await Product.findById(id);
 
     if (!product) {
@@ -409,6 +545,9 @@ export const deleteProduct = async (req, res) => {
     }
 
     await Product.findByIdAndDelete(id);
+
+    // Maintain vendor's category membership after product deletion
+    await syncVendorCategories(product.vendor);
 
     res.json({
       success: true,

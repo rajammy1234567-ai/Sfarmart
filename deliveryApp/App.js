@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { RiderAuthProvider, useRiderAuth } from './src/context/RiderAuthContext';
 import { DeliveryProvider } from './src/context/DeliveryContext';
 import { DeliveryNavigator } from './src/navigation/DeliveryNavigator';
+import { setNavigationRef, initNotificationListeners } from './src/services/notificationService';
 
 // Prevent unhandled promise rejections or native errors from crashing the mobile process
 if (typeof global !== 'undefined' && global.ErrorUtils) {
@@ -61,6 +62,15 @@ function RiderSession({ children }) {
   return <DeliveryProvider key={rider?._id || rider?.id || 'guest'}>{children}</DeliveryProvider>;
 }
 export default function App() {
+  React.useEffect(() => {
+    const unsubscribe = initNotificationListeners();
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []);
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
@@ -68,7 +78,7 @@ export default function App() {
           <RiderSession>
             <View style={styles.container}>
               <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-              <NavigationContainer>
+              <NavigationContainer ref={setNavigationRef}>
                 <DeliveryNavigator />
               </NavigationContainer>
             </View>

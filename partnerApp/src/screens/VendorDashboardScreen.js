@@ -26,6 +26,7 @@ import { GlassCard } from '../components/GlassCard';
 import { WaterBackground } from '../components/WaterBackground';
 import { AnimatedNumber } from '../components/common/AnimatedNumber';
 import { showAlert } from '../utils/alert';
+import { safeBlurActiveElement } from '../utils/focusManager';
 
 const LOGO = require('../../assets/farmart_logo.png');
 
@@ -156,7 +157,10 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
             {/* Store Profile & Settings Button */}
             <TouchableOpacity
               style={styles.profileHeaderBtn}
-              onPress={() => navigation.navigate('Account')}
+              onPress={() => {
+                safeBlurActiveElement();
+                navigation.navigate('Account');
+              }}
               activeOpacity={0.75}
               accessibilityLabel="Store Profile"
             >
@@ -254,7 +258,10 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
               {/* Button 1: Add New Item */}
               <GlassCard
                 style={styles.actionGlassBtn}
-                onPress={() => navigation.navigate('AddProduct')}
+                onPress={() => {
+                  safeBlurActiveElement();
+                  navigation.navigate('AddProduct');
+                }}
                 showSheen={true}
               >
                 <View style={styles.actionBtnInner}>
@@ -272,7 +279,10 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
               {/* Button 2: Detailed Analytics */}
               <GlassCard
                 style={styles.actionGlassBtn}
-                onPress={() => navigation.navigate('Reports')}
+                onPress={() => {
+                  safeBlurActiveElement();
+                  navigation.navigate('Reports');
+                }}
                 showSheen={true}
               >
                 <View style={styles.actionBtnInner}>
@@ -449,14 +459,21 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                               <Text style={styles.pickupOtpVal}>{o.pickupOtp || '----'}</Text>
                             </View>
 
-                            {o.rider && (
+                            {o.rider ? (
                               <View style={styles.assignedRiderMeta}>
                                 <Ionicons name="bicycle" size={14} color="#0284c7" />
                                 <Text style={styles.assignedRiderName}>
                                   {o.rider?.name || 'Gurmukh Singh'} ({o.rider?.vehicle?.plateNumber || 'PB-10-AB-1234'})
                                 </Text>
                               </View>
-                            )}
+                            ) : ['READY_FOR_RIDER', 'RIDER_ASSIGNED'].includes(o.status) ? (
+                              <View style={styles.assignedRiderMeta}>
+                                <ActivityIndicator size="small" color="#0284c7" style={{ marginRight: 4 }} />
+                                <Text style={[styles.assignedRiderName, { color: '#0369a1' }]}>
+                                  Assigning nearby delivery partner...
+                                </Text>
+                              </View>
+                            ) : null}
 
                             {o.status === 'RIDER_ARRIVED_STORE' && (
                               <View style={styles.arrivedAlertBanner}>

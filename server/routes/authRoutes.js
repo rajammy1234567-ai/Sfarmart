@@ -10,7 +10,8 @@ import {
   deleteAccount,
   customerLogin,
   vendorLogin,
-  registerPushToken
+  registerPushToken,
+  unregisterPushToken
 } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -30,5 +31,6 @@ router.post('/account/delete', requireAuth, deleteAccount);
 router.post('/customer/login', customerLogin);
 router.post('/vendor/login', vendorLogin);
 router.post('/push-token', requireAuth, registerPushToken);
+router.post('/push-token/unregister', requireAuth, unregisterPushToken);
 
 export default router;

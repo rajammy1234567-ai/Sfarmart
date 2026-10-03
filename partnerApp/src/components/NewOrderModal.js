@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { soundAlert } from '../utils/soundAlert';
+import { useModalFocus, safeBlurActiveElement } from '../utils/focusManager';
 
 export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
   const [timeLeft, setTimeLeft] = useState(60);
@@ -26,8 +27,11 @@ export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
   const orderRef = useRef(order);
   orderRef.current = order;
 
+  useModalFocus(Boolean(order));
+
   const handleAccept = async () => {
     if (isSubmitting) return;
+    safeBlurActiveElement();
     setIsSubmitting(true);
     soundAlert.stop();
     try {
@@ -86,6 +90,7 @@ export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
 
   const handleReject = async () => {
     if (isSubmitting) return;
+    safeBlurActiveElement();
     setIsSubmitting(true);
     soundAlert.stop();
     try {
@@ -155,7 +160,17 @@ export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
   });
 
   return (
-    <Modal visible={!!order} transparent animationType="fade">
+    <Modal
+      visible={!!order}
+      transparent
+      animationType="fade"
+      aria-modal={true}
+      accessibilityViewIsModal={true}
+      onRequestClose={() => {
+        safeBlurActiveElement();
+        if (onClose) onClose();
+      }}
+    >
       <View style={styles.overlay}>
         <Animated.View
           style={[

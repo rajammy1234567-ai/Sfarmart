@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { glassTheme } from '../theme/glass';
+import { safeBlurActiveElement } from '../utils/focusManager';
 
 const TAB_ICONS = {
   Dashboard: { active: 'storefront', inactive: 'storefront-outline', label: 'Dashboard' },
@@ -124,6 +125,7 @@ export const GlassTabBar = ({ state, descriptors, navigation }) => {
             const isFocused = state.index === index;
 
             const onPress = () => {
+              safeBlurActiveElement();
               const event = navigation.emit({
                 type: 'tabPress',
                 target: route.key,

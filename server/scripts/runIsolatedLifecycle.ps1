@@ -1,0 +1,142 @@
+# runIsolatedLifecycle.ps1
+# -----------------------------------
+# Launcher for Farmart isolated backend (staging only).
+# Uses process-scoped environment variables, validates staging URI,
+# checks port, starts backend, polls /api/health, runs isolated test,
+# and cleans up. All failures exit with nonzero codes.
+# -----------------------------------
+
+$ErrorActionPreference = 'Stop'
+
+# Save original environment values and current directory
+$preserveKeys = @(
+    'PORT','STAGING_MODE','NODE_ENV','DISABLE_EXTERNAL_NOTIFICATIONS',
+    'MONGODB_URI','STAGING_MONGO_URI','API_BASE',
+    'ALLOW_LIVE_STAGING_TEST','ALLOW_STAGING_ATLAS_TEST',
+    'JWT_ACCESS_SECRET','JWT_REFRESH_SECRET'
+)
+$originalEnv = @{}
+foreach ($k in $preserveKeys) {
+    $v = [Environment]::GetEnvironmentVariable($k, 'Process')
+    if ($null -ne $v) { $originalEnv[$k] = $v }
+}
+$originalDir = Get-Location
+
+try {
+    # Prompt for staging credentials (fixed user)
+    $cred = Get-Credential -UserName 'farmart_staging_tester' -Message 'Enter password for staging user farmart_staging_tester'
+    if (-not $cred) { Write-Error 'No credentials supplied.'; exit 1 }
+
+    # Build approved staging URI (fixed host/database)
+    $stagingHost = 'farmart-staging.gxn3bfw.mongodb.net'
+    $database    = 'farmart_test_disposable'
+    $userEsc = [System.Uri]::EscapeDataString($cred.UserName)
+    $passEsc = [System.Uri]::EscapeDataString($cred.GetNetworkCredential().Password)
+    $stagingUri = "mongodb+srv://$userEsc:`$passEsc@$stagingHost/$database?retryWrites=true`&w=majority"
+
+    # Set required environment variables (process scope)
+    [Environment]::SetEnvironmentVariable('PORT', '6001', 'Process')
+    [Environment]::SetEnvironmentVariable('STAGING_MODE', 'true', 'Process')
+    [Environment]::SetEnvironmentVariable('NODE_ENV', 'staging', 'Process')
+    [Environment]::SetEnvironmentVariable('DISABLE_EXTERNAL_NOTIFICATIONS','true', 'Process')
+    [Environment]::SetEnvironmentVariable('MONGODB_URI', $stagingUri, 'Process')
+    [Environment]::SetEnvironmentVariable('STAGING_MONGO_URI', $stagingUri, 'Process')
+    [Environment]::SetEnvironmentVariable('API_BASE', 'http://localhost:6001/api', 'Process')
+    # Clear live-test flags before launch
+    [Environment]::SetEnvironmentVariable('ALLOW_LIVE_STAGING_TEST', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('ALLOW_STAGING_ATLAS_TEST', $null, 'Process')
+
+    # Generate JWT secrets (32‑byte hex strings)
+    $jwtAccess  = node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
+    $jwtRefresh = node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
+    [Environment]::SetEnvironmentVariable('JWT_ACCESS_SECRET',  $jwtAccess,  'Process')
+    [Environment]::SetEnvironmentVariable('JWT_REFRESH_SECRET', $jwtRefresh, 'Process')
+
+    # Change to repository root
+    $repoRoot = 'C:/viz/all app/farmart/farm-mart-new'
+    Set-Location -Path $repoRoot
+
+    # Validate staging URI using the real validator module
+    $validatorScript = @"
+import { validateStagingUri } from './server/config/db.js';
+try {
+  validateStagingUri(process.env.MONGODB_URI);
+  process.exit(0);
+} catch (e) {
+  console.error('Staging URI validation failed:', e.message);
+  process.exit(1);
+}
+"@
+    node --input-type=module -e $validatorScript
+    if ($LASTEXITCODE -ne 0) { Write-Error 'Staging URI validation failed.'; exit $LASTEXITCODE }
+
+    # Ensure port 6001 is free (max 5 s wait)
+    $port = 6001
+    $maxWaitMs = 5000
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $portFree = $false
+    while ($stopwatch.ElapsedMilliseconds -lt $maxWaitMs) {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $tcp.Connect('localhost', $port)
+            $tcp.Close()
+            Start-Sleep -Milliseconds 500
+        } catch {
+            $tcp.Close()
+            $portFree = $true
+            break
+        }
+    }
+    if (-not $portFree) { Write-Error "Port $port is in use."; exit 2 }
+
+    # Launch backend and run test
+    $serverProc = $null
+    $testExitCode = $null
+    $ready = $false
+    try {
+        Write-Host "Starting backend on http://localhost:$port ..."
+        $serverProc = Start-Process -FilePath 'node' -ArgumentList 'server/server.js' -NoNewWindow -PassThru
+
+        # Poll /api/health (10 s deadline)
+        $deadline = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $deadline) {
+            if ($serverProc.HasExited) { break }
+            try {
+                $resp = Invoke-WebRequest -Uri "http://localhost:$port/api/health" -UseBasicParsing -TimeoutSec 2
+                if ($resp.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+            Start-Sleep -Milliseconds 250
+        }
+
+        if (-not $ready) { Write-Error "Backend did not become ready within timeout."; exit 3 }
+
+        # Enable live-test flag only for test process
+        [Environment]::SetEnvironmentVariable('ALLOW_LIVE_STAGING_TEST', 'true', 'Process')
+        Write-Host "Running isolated lifecycle test..."
+        $testProc = Start-Process -FilePath 'node' -ArgumentList '--test','server/tests/orderLifecycle.liveStaging.test.js' -NoNewWindow -PassThru -Wait
+        $testExitCode = $testProc.ExitCode
+    } finally {
+        if ($serverProc -and -not $serverProc.HasExited) {
+            Write-Host "Stopping backend (PID $($serverProc.Id))..."
+            Stop-Process -Id $serverProc.Id -Force
+        }
+    }
+} finally {
+    # Restore environment and working directory
+    foreach ($k in $preserveKeys) {
+        if ($originalEnv.ContainsKey($k)) {
+            [Environment]::SetEnvironmentVariable($k, $originalEnv[$k], 'Process')
+        } else {
+            [Environment]::SetEnvironmentVariable($k, $null, 'Process')
+        }
+    }
+    Set-Location -Path $originalDir
+    Write-Host "Environment restored."
+}
+
+# Exit with test result or non‑zero if no test ran
+if ($null -ne $testExitCode) {
+    exit $testExitCode
+} else {
+    exit 1
+}

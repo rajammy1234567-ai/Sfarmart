@@ -21,10 +21,20 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
       ],
       "softwareKeyboardLayoutMode": "resize"
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#16a34a"
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },

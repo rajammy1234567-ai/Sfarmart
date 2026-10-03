@@ -187,7 +187,7 @@ export const PartnerAccountScreen = () => {
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Service Radius</Text>
-              <Text style={styles.detailVal}>Up to 8 km express delivery</Text>
+              <Text style={styles.detailVal}>Up to {vendor?.deliveryRadiusKm || 7} km express delivery</Text>
             </View>
             <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
               <Text style={styles.detailLabel}>Operating Hours</Text>

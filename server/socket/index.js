@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import Order from '../models/Order.js';
 import User from '../models/User.js';
 import { canAccessOrder, idOf } from '../utils/deliveryPolicy.js';
+import { scheduleLongTimeout } from '../utils/timerUtils.js';
 let ioInstance;
 export function initSocket(httpServer) {
  const io = new Server(httpServer, {cors:{origin:'*'},pingInterval:25000,pingTimeout:20000});
@@ -44,7 +45,7 @@ export function initSocket(httpServer) {
   if (prefix && id) socket.join(prefix + ':' + (user.role === 'VENDOR' ? idOf(user.vendorId || id) : id));
   const expiresIn = user.exp ? (user.exp * 1000 - Date.now()) : 0;
   const expiry = Number.isFinite(expiresIn) && expiresIn > 0
-    ? setTimeout(() => socket.disconnect(true), Math.max(0, expiresIn))
+    ? scheduleLongTimeout(() => socket.disconnect(true), Math.max(0, expiresIn))
     : null;
   socket.on('join:vendor', (vendorId, ack = () => {}) => {
    if (user.role !== 'VENDOR' || idOf(user.vendorId || id) !== String(vendorId)) return ack({ ok: false });
@@ -92,7 +93,15 @@ export function initSocket(httpServer) {
   socket.on('leave:order', id => socket.leave('order:' + id));
   socket.on('leave:vendor', id => socket.leave('vendor:' + id));
   // GPS writes go through the authenticated HTTP endpoint, never an unchecked socket payload.
-  socket.on('disconnect', () => clearTimeout(expiry));
+  socket.on('disconnect', () => {
+    if (expiry) {
+      if (typeof expiry.clear === 'function') {
+        expiry.clear();
+      } else {
+        clearTimeout(expiry);
+      }
+    }
+  });
  });
  ioInstance=io;return io;
 }

@@ -165,59 +165,84 @@ export const findCanonicalCategoryMatch = (apiCat) => {
 };
 
 /**
- * Resolves the final display category list by merging the 8 canonical categories
- * with live database categories fetched from GET /api/categories.
+ * Resolves the display category list by strictly decorating and ordering
+ * live database categories returned from the server endpoint.
  *
  * Rules:
- * 1. Exactly 8 canonical categories are established as the primary browse rail/grid.
- * 2. If a backend category matches a canonical category, its real MongoDB `_id` is linked.
- * 3. If a canonical category has no backend record in DB, `dbId` is null and `isAvailableInDb: false`.
- *    (Never invent fake IDs like 'cat-1' or map to an unrelated category).
- * 4. Any unexpected backend category not belonging to the 8 canonical categories is preserved
- *    and appended so dynamic backend additions remain visible.
+ * 1. Must ONLY decorate and reorder returned records from apiCategories.
+ * 2. Must NEVER reintroduce hidden, inactive, or missing categories from local
+ *    canonical configuration.
+ * 3. If apiCategories is empty or null, returns empty array [].
+ * 4. Deduplicates strictly by exact database ID (_id or id) if repeated.
+ *    Never merges distinct database categories just because aliases or metadata match.
+ * 5. Uses the real MongoDB _id as the primary record identity (key) while keeping
+ *    canonical presentation keys (canonicalKey) separate.
+ * 6. Merges presentation styling (vectorIcon, accentColor, bgColor, borderColor, shortName)
+ *    when an API category matches a canonical definition.
+ * 7. Preserves real database fields (_id, slug, name, type, sortOrder, etc.).
+ * 8. Orders categories by sortOrder ascending, falling back to canonical sortOrder.
  */
 export const resolveBrowseCategories = (apiCategories = []) => {
-  const matchedApiIds = new Set();
+  if (!Array.isArray(apiCategories) || apiCategories.length === 0) {
+    return [];
+  }
 
-  // Map the 8 canonical categories
-  const resolvedCanonical = CANONICAL_BROWSE_CATEGORIES.map((cfg) => {
-    // Find matching API category if present
-    const matchedApiCat = apiCategories.find((apiCat) => {
-      const match = findCanonicalCategoryMatch(apiCat);
-      return match && match.key === cfg.key;
-    });
+  // Deduplicate strictly by database ID (_id or id) if the exact same record repeats.
+  // Distinct database IDs must NEVER be merged even if their icons/aliases/canonical profiles match.
+  const seenIds = new Set();
+  const dedupedApiCategories = [];
 
-    if (matchedApiCat) {
-      matchedApiIds.add(String(matchedApiCat._id || matchedApiCat.id));
+  for (const apiCat of apiCategories) {
+    if (!apiCat) continue;
+    const rawId = apiCat._id || apiCat.id;
+    if (rawId != null) {
+      const idStr = String(rawId);
+      if (seenIds.has(idStr)) {
+        continue; // Exact same database ID repeats: deduplicate
+      }
+      seenIds.add(idStr);
+    }
+    dedupedApiCategories.push(apiCat);
+  }
+
+  const decorated = dedupedApiCategories.map((apiCat, idx) => {
+    const rawId = apiCat._id || apiCat.id;
+    const dbId = rawId != null ? String(rawId) : null;
+    const stableKey = dbId || `cat_${apiCat.slug || idx}`;
+    const match = findCanonicalCategoryMatch(apiCat);
+
+    if (match) {
       return {
-        ...cfg,
-        _id: matchedApiCat._id || null,
-        dbId: matchedApiCat._id || null,
-        slug: matchedApiCat.slug || cfg.canonicalSlug,
-        apiCategory: matchedApiCat,
+        ...match,
+        // Stable React and record identity: use real database _id
+        _id: rawId || null,
+        dbId: rawId || null,
+        key: stableKey,
+        // Keep canonical presentation keys separate from record identity
+        canonicalKey: match.key,
+        presentationKey: match.key,
+        name: apiCat.name || match.name,
+        slug: apiCat.slug || match.canonicalSlug,
+        type: apiCat.type || match.type,
+        icon: apiCat.icon || match.icon,
+        vectorIcon: match.vectorIcon,
+        accentColor: match.accentColor,
+        bgColor: match.bgColor,
+        borderColor: match.borderColor,
+        shortName: match.shortName,
+        sortOrder: typeof apiCat.sortOrder === 'number' ? apiCat.sortOrder : match.sortOrder,
+        apiCategory: apiCat,
         isAvailableInDb: true
       };
     }
 
-    // Configured category absent from the API database
+    // Dynamic backend category not matching any canonical definition
     return {
-      ...cfg,
-      _id: null,
-      dbId: null,
-      slug: cfg.canonicalSlug,
-      apiCategory: null,
-      isAvailableInDb: false
-    };
-  });
-
-  // Preserve any additional backend categories not covered by the canonical 8
-  const additionalCategories = apiCategories
-    .filter((apiCat) => {
-      const id = String(apiCat._id || apiCat.id);
-      return !matchedApiIds.has(id) && !findCanonicalCategoryMatch(apiCat);
-    })
-    .map((apiCat, idx) => ({
-      key: `custom_${apiCat.slug || apiCat._id || idx}`,
+      _id: rawId || null,
+      dbId: rawId || null,
+      key: stableKey,
+      canonicalKey: null,
+      presentationKey: null,
       canonicalSlug: apiCat.slug || 'custom',
       slug: apiCat.slug || 'custom',
       name: apiCat.name || 'Other Category',
@@ -228,13 +253,12 @@ export const resolveBrowseCategories = (apiCategories = []) => {
       accentColor: '#64748b',
       bgColor: '#f8fafc',
       borderColor: '#e2e8f0',
-      sortOrder: 100 + idx,
-      _id: apiCat._id || null,
-      dbId: apiCat._id || null,
+      sortOrder: typeof apiCat.sortOrder === 'number' ? apiCat.sortOrder : (100 + idx),
       apiCategory: apiCat,
       isAvailableInDb: true,
       aliases: []
-    }));
+    };
+  });
 
-  return [...resolvedCanonical, ...additionalCategories];
+  return decorated.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 };

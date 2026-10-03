@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Vendor from '../models/Vendor.js';
+import Rider from '../models/Rider.js';
 import RefreshToken from '../models/RefreshToken.js';
 import Order from '../models/Order.js';
 import Cart from '../models/Cart.js';
@@ -771,28 +772,198 @@ export const vendorLogin = async (req, res) => {
 
 /**
  * POST /api/auth/push-token
+ * Registers Expo push token or native FCM token with strict role and account isolation.
  */
 export const registerPushToken = async (req, res) => {
   try {
-    const { token, platform = 'web' } = req.body;
-    if (!token) {
-      return res.status(400).json({ success: false, message: 'Token is required' });
+    const { token, platform = 'android', deviceId = null, tokenType } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ success: false, message: 'Valid token string is required' });
     }
 
-    const userId = req.user._id || req.user.id;
+    const trimmedToken = token.trim();
+    const isExpo =
+      trimmedToken.startsWith('ExponentPushToken[') ||
+      trimmedToken.startsWith('ExpoPushToken[') ||
+      tokenType === 'expo';
+
+    const userId = req.user?._id || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User authentication required' });
+    }
+
     if (req.user?.role === 'VENDOR') {
-      await Vendor.findByIdAndUpdate(req.user.vendorId || userId, {
-        $addToSet: { expoPushTokens: token }
-      });
-    } else if (userId) {
-      await User.findByIdAndUpdate(userId, {
-        $addToSet: { fcmTokens: { token, platform, updatedAt: new Date() } }
-      });
+      const vendorId = req.user.vendorId || userId;
+      if (isExpo) {
+        // Prevent duplicate cross-vendor token leakage
+        await Vendor.updateMany(
+          { _id: { $ne: vendorId }, expoPushTokens: trimmedToken },
+          { $pull: { expoPushTokens: trimmedToken } }
+        );
+        await Vendor.findByIdAndUpdate(vendorId, {
+          $addToSet: { expoPushTokens: trimmedToken }
+        });
+      }
+    } else if (req.user?.role === 'RIDER') {
+      const riderId = req.user.riderId || userId;
+      if (isExpo) {
+        // Prevent duplicate cross-rider token leakage
+        const otherConditions = [{ 'expoPushTokens.token': trimmedToken }];
+        if (deviceId) {
+          otherConditions.push({ 'expoPushTokens.deviceId': deviceId });
+        }
+        await Rider.updateMany(
+          { _id: { $ne: riderId }, $or: otherConditions },
+          {
+            $pull: {
+              expoPushTokens: {
+                $or: [
+                  { token: trimmedToken },
+                  ...(deviceId ? [{ deviceId }] : [])
+                ]
+              }
+            }
+          }
+        );
+
+        await Rider.findByIdAndUpdate(riderId, {
+          $pull: {
+            expoPushTokens: {
+              $or: [
+                { token: trimmedToken },
+                ...(deviceId ? [{ deviceId }] : [])
+              ]
+            }
+          }
+        });
+
+        await Rider.findByIdAndUpdate(riderId, {
+          $push: {
+            expoPushTokens: {
+              token: trimmedToken,
+              platform,
+              deviceId: deviceId || null,
+              updatedAt: new Date()
+            }
+          }
+        });
+      }
+    } else {
+      // Customer registration: isolate device and prevent cross-account push leakage
+      if (isExpo) {
+        // Remove this token/deviceId from any other customer account
+        const otherConditions = [{ 'expoPushTokens.token': trimmedToken }];
+        if (deviceId) {
+          otherConditions.push({ 'expoPushTokens.deviceId': deviceId });
+        }
+        await User.updateMany(
+          { _id: { $ne: userId }, $or: otherConditions },
+          {
+            $pull: {
+              expoPushTokens: {
+                $or: [
+                  { token: trimmedToken },
+                  ...(deviceId ? [{ deviceId }] : [])
+                ]
+              }
+            }
+          }
+        );
+
+        // Remove any prior entry on this user to update timestamp and avoid duplicate
+        await User.findByIdAndUpdate(userId, {
+          $pull: {
+            expoPushTokens: {
+              $or: [
+                { token: trimmedToken },
+                ...(deviceId ? [{ deviceId }] : [])
+              ]
+            }
+          }
+        });
+
+        // Add fresh registration
+        await User.findByIdAndUpdate(userId, {
+          $push: {
+            expoPushTokens: {
+              token: trimmedToken,
+              platform,
+              deviceId: deviceId || null,
+              updatedAt: new Date()
+            }
+          }
+        });
+      } else {
+        // Native FCM token
+        await User.findByIdAndUpdate(userId, {
+          $pull: { fcmTokens: { token: trimmedToken } }
+        });
+        await User.findByIdAndUpdate(userId, {
+          $push: {
+            fcmTokens: {
+              token: trimmedToken,
+              platform,
+              updatedAt: new Date()
+            }
+          }
+        });
+      }
     }
 
     return res.json({ success: true, message: 'Push token saved successfully' });
   } catch (err) {
-    console.error('Register push token error:', err);
+    console.error('Register push token error:', err.message);
     return res.status(500).json({ success: false, message: 'Error saving push token' });
+  }
+};
+
+/**
+ * POST /api/auth/push-token/unregister
+ * Removes device token association on logout to prevent other accounts from receiving notifications.
+ */
+export const unregisterPushToken = async (req, res) => {
+  try {
+    const { token, deviceId } = req.body;
+    const userId = req.user?._id || req.user?.id;
+
+    if (!token && !deviceId) {
+      return res.status(400).json({ success: false, message: 'Token or deviceId is required to unregister' });
+    }
+
+    const pullCriteria = [];
+    if (token && typeof token === 'string') {
+      pullCriteria.push({ token: token.trim() });
+    }
+    if (deviceId) {
+      pullCriteria.push({ deviceId });
+    }
+
+    if (req.user?.role === 'VENDOR') {
+      const vendorId = req.user.vendorId || userId;
+      if (token) {
+        await Vendor.findByIdAndUpdate(vendorId, {
+          $pull: { expoPushTokens: token.trim() }
+        });
+      }
+    } else if (req.user?.role === 'RIDER') {
+      const riderId = req.user.riderId || userId;
+      await Rider.findByIdAndUpdate(riderId, {
+        $pull: {
+          expoPushTokens: { $or: pullCriteria }
+        }
+      });
+    } else if (userId) {
+      await User.findByIdAndUpdate(userId, {
+        $pull: {
+          expoPushTokens: { $or: pullCriteria },
+          ...(token ? { fcmTokens: { token: token.trim() } } : {})
+        }
+      });
+    }
+
+    return res.json({ success: true, message: 'Push token unregistered successfully' });
+  } catch (err) {
+    console.error('Unregister push token error:', err.message);
+    return res.status(500).json({ success: false, message: 'Error unregistering push token' });
   }
 };

@@ -87,6 +87,14 @@ const riderSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    expoPushTokens: [
+      {
+        token: { type: String, required: true },
+        platform: { type: String, default: 'android' },
+        deviceId: { type: String, default: null },
+        updatedAt: { type: Date, default: Date.now }
+      }
+    ],
     refreshTokenHash: {
       type: String,
       default: ''

@@ -14,7 +14,7 @@ export function storePoint(vendor) {
   return { lat: coordinates?.[1], lng: coordinates?.[0] };
 }
 export function canAccessOrder(user, order) {
-  const id = idOf(user?.sub || user?.id || user?._id);
+  const id = idOf(user?.sub || user?.id || user?._id || user?.vendorId);
   if (!id) return false;
   return user.role === 'ADMIN' ||
     (user.role === 'CUSTOMER' && idOf(order.customer) === id) ||
@@ -35,14 +35,23 @@ export function orderForRole(doc, role) {
   return order;
 }
 export function canTransition(user, order, status) {
+
   if (!canAccessOrder(user, order)) return false;
   if (user.role === 'CUSTOMER') return order.status === 'NEW_ORDER' && status === 'CANCELLED';
   if (user.role === 'ADMIN') return true;
   if (user.role === 'VENDOR') {
-    return ({ NEW_ORDER: ['ACCEPTED', 'REJECTED'], ACCEPTED: ['PREPARING', 'REJECTED'], PREPARING: ['READY_FOR_RIDER', 'REJECTED'] }[order.status] || []).includes(status);
+    // Vendors may only move through preparation stages; direct to delivery is prohibited
+    return ({
+      NEW_ORDER: ['ACCEPTED', 'REJECTED'],
+      ACCEPTED: ['PREPARING', 'REJECTED'],
+      PREPARING: ['READY_FOR_RIDER', 'REJECTED'],
+      // No direct transition to OUT_FOR_DELIVERY or DELIVERED from vendor side
+      READY_FOR_RIDER: []
+    }[order.status] || []).includes(status);
   }
   if (user.role === 'RIDER') {
-    return ({ READY_FOR_RIDER: ['OUT_FOR_DELIVERY'], OUT_FOR_DELIVERY: ['DELIVERED'] }[order.status] || []).includes(status);
+    // Rider transitions should be handled by dedicated handlers; generic endpoint must reject.
+    return false;
   }
   return false;
 

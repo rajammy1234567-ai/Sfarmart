@@ -22,18 +22,7 @@ import { colors } from '../theme/colors';
 import { GlassCard } from '../components/GlassCard';
 import { WaterBackground } from '../components/WaterBackground';
 import { showAlert } from '../utils/alert';
-
-// Standard 8 seeded categories for instant zero-latency render
-const FALLBACK_CATEGORIES = [
-  { _id: 'cat-1', name: 'Fresh Fruits & Vegetables' },
-  { _id: 'cat-2', name: 'Dairy, Bread & Eggs' },
-  { _id: 'cat-3', name: 'Atta, Rice & Dal' },
-  { _id: 'cat-4', name: 'Oil, Ghee & Masala' },
-  { _id: 'cat-5', name: 'Ghar Ka Khana / Home Thali' },
-  { _id: 'cat-6', name: 'Mithai & Bakery' },
-  { _id: 'cat-7', name: 'Snacks & Munchies' },
-  { _id: 'cat-8', name: 'Cold Drinks & Juices' }
-];
+import { useModalFocus, safeBlurActiveElement } from '../utils/focusManager';
 
 // Helper to assign real vector icons & curated colors to each category
 export const getCategoryMeta = (catName = '') => {
@@ -68,31 +57,86 @@ export const getCategoryMeta = (catName = '') => {
 const UNIT_PRESETS = ['1 kg', '500 g', '250 g', '1 pc', '1 plate', '1 packet', '1 litre', '1 dozen'];
 const STOCK_PRESETS = ['10', '25', '50', '100', '200'];
 
-export const AddProductScreen = ({ navigation }) => {
+export const AddProductScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width > 600;
 
-  const { addInventoryItem, categories, vendor } = usePartner();
+  const editItem = route?.params?.product || route?.params?.item || null;
+  const isEditing = Boolean(editItem);
 
-  const displayCategories = categories && categories.length > 0 ? categories : FALLBACK_CATEGORIES;
+  const { addInventoryItem, updateInventoryItem, categories = [], fetchCategories, requestCategory, createCategory, vendor } = usePartner();
 
-  const [name, setName] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState(displayCategories[0]?._id || '');
-  const [price, setPrice] = useState('');
-  const [mrp, setMrp] = useState('');
-  const [unit, setUnit] = useState('1 kg');
-  const [stock, setStock] = useState('50');
-  const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [isVeg, setIsVeg] = useState(true);
+  const displayCategories = Array.isArray(categories) ? categories : [];
+
+  const initialCatId = editItem?.categoryId || (typeof editItem?.category === 'object' ? editItem.category?._id : editItem?.category) || '';
+  const [name, setName] = useState(editItem?.name || '');
+  const [selectedCatId, setSelectedCatId] = useState(initialCatId);
+  const [selectedSubCategory, setSelectedSubCategory] = useState(editItem?.subCategory || '');
+  const [price, setPrice] = useState(editItem?.price !== undefined ? String(editItem.price) : '');
+  const [mrp, setMrp] = useState(editItem?.mrp !== undefined ? String(editItem.mrp) : '');
+  const [unit, setUnit] = useState(editItem?.unit || '1 kg');
+  const [stock, setStock] = useState(
+    editItem?.stock !== undefined ? String(editItem.stock) : editItem?.stockQty !== undefined ? String(editItem.stockQty) : '50'
+  );
+  const [description, setDescription] = useState(editItem?.description || '');
+  const [imageUrl, setImageUrl] = useState(editItem?.image || '');
+  const [isVeg, setIsVeg] = useState(editItem?.isVeg !== undefined ? editItem.isVeg : true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Category request modal state
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatType, setNewCatType] = useState('GROCERY');
+  const [newCatParentId, setNewCatParentId] = useState('');
+  const [newCatIcon, setNewCatIcon] = useState('🥦');
+  const [newCatReason, setNewCatReason] = useState('');
+  const [isRequestingCategory, setIsRequestingCategory] = useState(false);
+
+  useModalFocus(showCategoryModal);
+
   useEffect(() => {
-    if (displayCategories.length > 0 && !selectedCatId) {
-      setSelectedCatId(displayCategories[0]._id || displayCategories[0].id);
+    if (fetchCategories && (!categories || categories.length === 0)) {
+      fetchCategories();
     }
-  }, [displayCategories, selectedCatId]);
+  }, [fetchCategories, categories]);
+
+  useEffect(() => {
+    if (Array.isArray(categories) && categories.length > 0) {
+      if (editItem) {
+        const targetCat = editItem.categoryId || (typeof editItem.category === 'object' ? editItem.category?._id : editItem.category);
+        const match = categories.find((c) => (c._id || c.id) === targetCat || c.name === targetCat || c.slug === targetCat);
+        if (match) {
+          setSelectedCatId(match._id || match.id);
+          return;
+        }
+      }
+      const exists = categories.some((c) => (c._id || c.id) === selectedCatId);
+      if (!selectedCatId || !exists) {
+        setSelectedCatId(categories[0]._id || categories[0].id);
+      }
+    }
+  }, [categories, selectedCatId, editItem]);
+
+  // When parent category changes: clear incompatible subcategory
+  const handleSelectCategory = (newCatId) => {
+    if (newCatId !== selectedCatId) {
+      setSelectedCatId(newCatId);
+      const targetCat = displayCategories.find((c) => (c._id || c.id) === newCatId);
+      const isSubCompatible = (targetCat?.subCategories || []).some(
+        (s) =>
+          (s._id && String(s._id) === String(selectedSubCategory)) ||
+          (s.name && s.name.toLowerCase() === (selectedSubCategory || '').toLowerCase()) ||
+          (s.slug && s.slug.toLowerCase() === (selectedSubCategory || '').toLowerCase())
+      );
+      if (!isSubCompatible) {
+        setSelectedSubCategory('');
+      }
+    }
+  };
+
+  const currentCategory = displayCategories.find((c) => (c._id || c.id) === selectedCatId);
+  const availableSubCategories = Array.isArray(currentCategory?.subCategories) ? currentCategory.subCategories : [];
 
   const numPrice = parseFloat(price);
   const numMrp = parseFloat(mrp);
@@ -110,9 +154,63 @@ export const AddProductScreen = ({ navigation }) => {
     ]);
   };
 
+  const handleRequestCategorySubmit = async () => {
+    if (!newCatName.trim()) {
+      showFeedback('Validation Error', 'Please enter a category name.');
+      return;
+    }
+    setIsRequestingCategory(true);
+    try {
+      const fn = requestCategory || createCategory;
+      const res = await fn({
+        proposedName: newCatName.trim(),
+        proposedType: newCatType,
+        suggestedParentCategory: newCatParentId || null,
+        proposedIcon: newCatIcon.trim() || (newCatType === 'FOOD' ? '🍛' : '🥦'),
+        reason: newCatReason.trim()
+      });
+
+      if (res && res.success) {
+        setShowCategoryModal(false);
+        setNewCatName('');
+        setNewCatReason('');
+        setNewCatParentId('');
+
+        if (res.exists && res.category) {
+          const existingId = res.category._id || res.category.id;
+          setSelectedCatId(existingId);
+          showFeedback(
+            'Existing Category Selected',
+            `An approved category "${res.category.name}" already exists and was selected for your product.`
+          );
+        } else {
+          showFeedback(
+            'Request Submitted! 📋',
+            `Your request for "${newCatName.trim()}" has been submitted for Farmart admin review.\n\nPlease select an existing approved category below to publish your product now.`
+          );
+        }
+      } else if (res && res.pending) {
+        showFeedback(
+          'Request Pending ⏳',
+          res.message || 'You already have a pending request for this category name. Admin review is in progress.'
+        );
+      } else {
+        showFeedback('Error', res?.message || 'Could not submit category request.');
+      }
+    } catch {
+      showFeedback('Error', 'Failed to submit category request. Please check your connection.');
+    } finally {
+      setIsRequestingCategory(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!name.trim()) {
       showFeedback('Validation Error', 'Please enter a product title.');
+      return;
+    }
+    if (!selectedCatId || !selectedCatId.match(/^[0-9a-fA-F]{24}$/)) {
+      showFeedback('Validation Error', 'Please select a valid store category from the database.');
       return;
     }
     if (!price || isNaN(price) || Number(price) <= 0) {
@@ -126,33 +224,47 @@ export const AddProductScreen = ({ navigation }) => {
 
     setIsSubmitting(true);
     try {
-      const catId = selectedCatId || displayCategories[0]?._id;
-      const res = await addInventoryItem({
+      const payload = {
         name: name.trim(),
-        categoryId: catId,
-        category: catId,
+        categoryId: selectedCatId,
+        category: selectedCatId,
+        subCategory: selectedSubCategory || '',
         price: Number(price),
         mrp: numMrp && numMrp > 0 ? Number(numMrp) : Number(price),
         unit: unit.trim() || '1 kg',
         stock: Number(stock),
+        stockQty: Number(stock),
         description: description.trim(),
         image:
           imageUrl.trim() ||
           'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80',
         isVeg: isVeg
-      });
+      };
+
+      let res;
+      if (isEditing) {
+        const itemId = editItem.id || editItem._id || editItem.productId;
+        res = await updateInventoryItem(itemId, payload);
+      } else {
+        res = await addInventoryItem(payload);
+      }
 
       if (res && res.success !== false) {
-        showFeedback('Success! 🌟', 'New product published to customer app!', true);
+        showFeedback(
+          isEditing ? 'Updated! ✨' : 'Success! 🌟',
+          isEditing ? 'Product details updated successfully!' : 'New product published to customer app!',
+          true
+        );
       } else {
         showFeedback('Error', res?.message || 'Could not save product.');
       }
     } catch (err) {
-      showFeedback('Error', 'Failed to publish product. Please check your connection.');
+      showFeedback('Error', 'Failed to save product. Please check your connection.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <View style={styles.container}>
@@ -176,7 +288,7 @@ export const AddProductScreen = ({ navigation }) => {
           <Ionicons name="arrow-back" size={20} color="#0f172a" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.headerBarTitle}>Add New Listing</Text>
+          <Text style={styles.headerBarTitle}>{isEditing ? 'Edit Product Listing' : 'Add New Listing'}</Text>
           <Text style={styles.headerBarSub}>{vendor?.storeName || 'Merchant Store'}</Text>
         </View>
       </View>
@@ -229,58 +341,160 @@ export const AddProductScreen = ({ navigation }) => {
 
             {/* ==================== CATEGORY SELECTOR WITH ICONS ==================== */}
             <View style={styles.inputGroup}>
-              <View style={styles.fieldLabelRow}>
-                <Ionicons name="grid-outline" size={14} color="#ea580c" />
-                <Text style={styles.fieldLabel}>Category *</Text>
+              <View style={styles.categoryHeaderRow}>
+                <View style={styles.fieldLabelRow}>
+                  <Ionicons name="grid-outline" size={14} color="#ea580c" />
+                  <Text style={styles.fieldLabel}>Category *</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.addCatBtn}
+                  onPress={() => {
+                    setNewCatName('');
+                    setNewCatType(vendor?.storeType === 'HOME_CHEF' ? 'FOOD' : 'GROCERY');
+                    setNewCatIcon(vendor?.storeType === 'HOME_CHEF' ? '🍛' : '🥦');
+                    setNewCatParentId('');
+                    setNewCatReason('');
+                    setShowCategoryModal(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="git-pull-request-outline" size={15} color="#16a34a" />
+                  <Text style={styles.addCatBtnText}>Request Category</Text>
+                </TouchableOpacity>
               </View>
               <Text style={styles.fieldHelper}>Select the store category for customer discovery:</Text>
 
-              <View style={styles.catGrid}>
-                {displayCategories.map((c) => {
-                  const catId = c._id || c.id;
-                  const isSelected = selectedCatId === catId;
-                  const meta = getCategoryMeta(c.name);
+              {displayCategories.length === 0 ? (
+                <View style={styles.catEmptyState}>
+                  <Ionicons name="alert-circle-outline" size={24} color="#d97706" />
+                  <Text style={styles.catEmptyText}>No categories loaded from database.</Text>
+                  <TouchableOpacity
+                    style={styles.createCatPromptBtn}
+                    onPress={() => {
+                      setNewCatName('');
+                      setNewCatType(vendor?.storeType === 'HOME_CHEF' ? 'FOOD' : 'GROCERY');
+                      setNewCatIcon(vendor?.storeType === 'HOME_CHEF' ? '🍛' : '🥦');
+                      setNewCatParentId('');
+                      setNewCatReason('');
+                      setShowCategoryModal(true);
+                    }}
+                  >
+                    <Text style={styles.createCatPromptText}>+ Request New Category</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.catGrid}>
+                  {displayCategories.map((c) => {
+                    const catId = c._id || c.id;
+                    const isSelected = selectedCatId === catId;
+                    const meta = getCategoryMeta(c.name);
 
-                  return (
+                    return (
+                      <TouchableOpacity
+                        key={catId}
+                        style={[styles.catChipWithIcon, isSelected && styles.catChipWithIconActive]}
+                        onPress={() => handleSelectCategory(catId)}
+                        activeOpacity={0.8}
+                      >
+                        <View
+                          style={[
+                            styles.catIconOrb,
+                            { backgroundColor: isSelected ? '#ea580c' : meta.bg }
+                          ]}
+                        >
+                          <Ionicons
+                            name={meta.icon}
+                            size={16}
+                            color={isSelected ? '#ffffff' : meta.color}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.catChipText,
+                            isSelected && styles.catChipTextActive
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {c.name}
+                        </Text>
+                        {isSelected && (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color="#ea580c"
+                            style={{ marginLeft: 'auto' }}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* ==================== SUBCATEGORY SELECTOR ==================== */}
+              {availableSubCategories.length > 0 && (
+                <View style={styles.subCatSection}>
+                  <View style={styles.subCatHeaderRow}>
+                    <Ionicons name="git-branch-outline" size={14} color="#ea580c" />
+                    <Text style={styles.subCatLabel}>Subcategory (Optional)</Text>
+                  </View>
+                  <Text style={styles.subCatHelper}>
+                    Select a curated subcategory under {currentCategory?.name || 'parent'}:
+                  </Text>
+                  <View style={styles.subCatGrid}>
                     <TouchableOpacity
-                      key={catId}
-                      style={[styles.catChipWithIcon, isSelected && styles.catChipWithIconActive]}
-                      onPress={() => setSelectedCatId(catId)}
+                      style={[
+                        styles.subCatChip,
+                        !selectedSubCategory && styles.subCatChipActive
+                      ]}
+                      onPress={() => setSelectedSubCategory('')}
                       activeOpacity={0.8}
                     >
-                      <View
-                        style={[
-                          styles.catIconOrb,
-                          { backgroundColor: isSelected ? '#ea580c' : meta.bg }
-                        ]}
-                      >
-                        <Ionicons
-                          name={meta.icon}
-                          size={16}
-                          color={isSelected ? '#ffffff' : meta.color}
-                        />
-                      </View>
                       <Text
                         style={[
-                          styles.catChipText,
-                          isSelected && styles.catChipTextActive
+                          styles.subCatChipText,
+                          !selectedSubCategory && styles.subCatChipTextActive
                         ]}
-                        numberOfLines={2}
                       >
-                        {c.name}
+                        General / None
                       </Text>
-                      {isSelected && (
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={16}
-                          color="#ea580c"
-                          style={{ marginLeft: 'auto' }}
-                        />
-                      )}
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+                    {availableSubCategories.map((sub) => {
+                      const subId = sub._id || sub.id;
+                      const subKey = subId || sub.slug || sub.name;
+                      const isSubActive =
+                        Boolean(selectedSubCategory) &&
+                        (String(selectedSubCategory) === String(subId) ||
+                          selectedSubCategory.toLowerCase() === (sub.name || '').toLowerCase() ||
+                          selectedSubCategory.toLowerCase() === (sub.slug || '').toLowerCase());
+
+                      return (
+                        <TouchableOpacity
+                          key={subKey}
+                          style={[
+                            styles.subCatChip,
+                            isSubActive && styles.subCatChipActive
+                          ]}
+                          onPress={() => setSelectedSubCategory(isSubActive ? '' : sub.name)}
+                          activeOpacity={0.8}
+                        >
+                          {isSubActive && (
+                            <Ionicons name="checkmark-circle" size={14} color="#ea580c" />
+                          )}
+                          <Text
+                            style={[
+                              styles.subCatChipText,
+                              isSubActive && styles.subCatChipTextActive
+                            ]}
+                          >
+                            {sub.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Price & MRP */}
@@ -421,14 +635,174 @@ export const AddProductScreen = ({ navigation }) => {
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
-                  <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" />
-                  <Text style={styles.publishBtnText}>Publish to Customer Feed</Text>
+                  <Ionicons name={isEditing ? 'save-outline' : 'cloud-upload-outline'} size={20} color="#ffffff" />
+                  <Text style={styles.publishBtnText}>
+                    {isEditing ? 'Save Product Changes' : 'Publish to Customer Feed'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
           </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Global Category Request Modal (Moderated Flow) */}
+      <Modal
+        visible={showCategoryModal}
+        transparent={true}
+        animationType="fade"
+        aria-modal={true}
+        accessibilityViewIsModal={true}
+        onRequestClose={() => {
+          safeBlurActiveElement();
+          setShowCategoryModal(false);
+        }}
+      >
+        <View style={styles.catModalBackdrop}>
+          <View style={styles.modalContentCard}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.modalHeaderOrb}>
+                  <Ionicons name="git-pull-request-outline" size={18} color="#16a34a" />
+                </View>
+                <Text style={styles.modalTitle}>Request New Category</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Propose a new category for admin review. Pending requests do not appear in customer apps until approved.
+            </Text>
+
+            <View style={styles.modalInputGroup}>
+              <Text style={styles.modalLabel}>Proposed Category Name *</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newCatName}
+                onChangeText={setNewCatName}
+                placeholder="e.g. Exotic Herbs & Microgreens"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.modalInputGroup}>
+              <Text style={styles.modalLabel}>Catalog Type *</Text>
+              <View style={styles.typeSelectorRow}>
+                <TouchableOpacity
+                  style={[styles.typeBtn, newCatType === 'GROCERY' && styles.typeBtnActive]}
+                  onPress={() => {
+                    setNewCatType('GROCERY');
+                    if (newCatIcon === '🍛') setNewCatIcon('🥦');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.typeEmoji}>🥦</Text>
+                  <Text style={[styles.typeBtnText, newCatType === 'GROCERY' && styles.typeBtnTextActive]}>
+                    GROCERY
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeBtn, newCatType === 'FOOD' && styles.typeBtnActive]}
+                  onPress={() => {
+                    setNewCatType('FOOD');
+                    if (newCatIcon === '🥦') setNewCatIcon('🍛');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.typeEmoji}>🍛</Text>
+                  <Text style={[styles.typeBtnText, newCatType === 'FOOD' && styles.typeBtnTextActive]}>
+                    FOOD / MEALS
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Suggested Parent Category (Optional) */}
+            <View style={styles.modalInputGroup}>
+              <Text style={styles.modalLabel}>Suggested Parent Category (Optional)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.parentCatChip,
+                    !newCatParentId && styles.parentCatChipActive
+                  ]}
+                  onPress={() => setNewCatParentId('')}
+                >
+                  <Text style={[styles.parentCatChipText, !newCatParentId && styles.parentCatChipTextActive]}>
+                    None (Top-Level)
+                  </Text>
+                </TouchableOpacity>
+                {displayCategories.map((c) => {
+                  const catId = c._id || c.id;
+                  const isSelected = newCatParentId === catId;
+                  return (
+                    <TouchableOpacity
+                      key={catId}
+                      style={[
+                        styles.parentCatChip,
+                        isSelected && styles.parentCatChipActive
+                      ]}
+                      onPress={() => setNewCatParentId(catId)}
+                    >
+                      <Text style={[styles.parentCatChipText, isSelected && styles.parentCatChipTextActive]}>
+                        {c.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View style={styles.modalInputGroup}>
+              <Text style={styles.modalLabel}>Icon Emoji</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newCatIcon}
+                onChangeText={setNewCatIcon}
+                placeholder={newCatType === 'FOOD' ? '🍛' : '🥦'}
+                placeholderTextColor={colors.textMuted}
+                maxLength={10}
+              />
+            </View>
+
+            <View style={styles.modalInputGroup}>
+              <Text style={styles.modalLabel}>Reason / Store Justification (Optional)</Text>
+              <TextInput
+                style={[styles.modalInput, { minHeight: 46 }]}
+                value={newCatReason}
+                onChangeText={setNewCatReason}
+                placeholder="Why is this category needed for your products?"
+                placeholderTextColor={colors.textMuted}
+                multiline
+              />
+            </View>
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.catModalCancelBtn}
+                onPress={() => setShowCategoryModal(false)}
+                disabled={isRequestingCategory}
+              >
+                <Text style={styles.catModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.catModalSubmitBtn}
+                onPress={handleRequestCategorySubmit}
+                disabled={isRequestingCategory}
+              >
+                {isRequestingCategory ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.catModalSubmitText}>Submit Request</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -450,6 +824,8 @@ export const InventoryScreen = ({ navigation }) => {
   const [replenishingId, setReplenishingId] = useState(null);
   const [stockModalItem, setStockModalItem] = useState(null);
   const [stockInputVal, setStockInputVal] = useState('25');
+
+  useModalFocus(Boolean(stockModalItem));
 
   const filteredItems = inventory.filter((item) => {
     if (activeTab === 'IN_STOCK') return item.isAvailable && (item.stock ?? item.stockQty) > 0;
@@ -495,7 +871,10 @@ export const InventoryScreen = ({ navigation }) => {
           <Text style={styles.headerBarSub}>{vendor?.storeName || 'Merchant Store'}</Text>
         </View>
         <TouchableOpacity
-          onPress={() => navigation.navigate('AddProduct')}
+          onPress={() => {
+            safeBlurActiveElement();
+            navigation.navigate('AddProduct');
+          }}
           style={styles.addNavBtn}
           activeOpacity={0.8}
         >
@@ -578,7 +957,7 @@ export const InventoryScreen = ({ navigation }) => {
                     <Text style={styles.invPrice}>
                       ₹{item.price} <Text style={styles.invUnit}>/ {item.unit || '1 kg'}</Text>
                     </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                       <Text
                         style={[
                           styles.stockBadgeText,
@@ -587,6 +966,12 @@ export const InventoryScreen = ({ navigation }) => {
                       >
                         Stock: {stockQty} {item.unit || 'units'}
                       </Text>
+                      {item.subCategory ? (
+                        <View style={styles.subCatBadge}>
+                          <Ionicons name="pricetag-outline" size={10} color="#0284c7" />
+                          <Text style={styles.subCatBadgeText}>{item.subCategory}</Text>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
 
@@ -634,17 +1019,29 @@ export const InventoryScreen = ({ navigation }) => {
                     </TouchableOpacity>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.deleteListingBtn}
-                    onPress={() => {
-                      showAlert('Remove Product', `Delete "${item.name}" from store catalog?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => deleteInventoryItem(itemId) }
-                      ]);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.editListingBtn}
+                      onPress={() => {
+                        safeBlurActiveElement();
+                        navigation.navigate('AddProduct', { product: item });
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="pencil-outline" size={16} color="#0284c7" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteListingBtn}
+                      onPress={() => {
+                        showAlert('Remove Product', `Delete "${item.name}" from store catalog?`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Delete', style: 'destructive', onPress: () => deleteInventoryItem(itemId) }
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </GlassCard>
             );
@@ -657,7 +1054,12 @@ export const InventoryScreen = ({ navigation }) => {
         visible={!!stockModalItem}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setStockModalItem(null)}
+        aria-modal={true}
+        accessibilityViewIsModal={true}
+        onRequestClose={() => {
+          safeBlurActiveElement();
+          setStockModalItem(null);
+        }}
       >
         <View style={styles.modalBackdrop}>
           <GlassCard style={styles.stockModalCard}>
@@ -1155,6 +1557,77 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(239, 68, 68, 0.1)'
   },
+  editListingBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(2, 132, 199, 0.1)'
+  },
+  subCatSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(226, 232, 240, 0.7)'
+  },
+  subCatHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6
+  },
+  subCatLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a'
+  },
+  subCatHelper: {
+    fontSize: 11,
+    color: '#64748b',
+    marginBottom: 8
+  },
+  subCatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  subCatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(226, 232, 240, 0.85)'
+  },
+  subCatChipActive: {
+    backgroundColor: 'rgba(234, 88, 12, 0.12)',
+    borderColor: '#ea580c'
+  },
+  subCatChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569'
+  },
+  subCatChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '800'
+  },
+  subCatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(2, 132, 199, 0.1)',
+    alignSelf: 'flex-start'
+  },
+  subCatBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0284c7'
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -1304,5 +1777,196 @@ const styles = StyleSheet.create({
   settleRefText: {
     fontSize: 11,
     color: '#64748b'
+  },
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4
+  },
+  addCatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(22, 163, 74, 0.1)'
+  },
+  addCatBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a'
+  },
+  catEmptyState: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    alignItems: 'center',
+    gap: 6
+  },
+  catEmptyText: {
+    fontSize: 13,
+    color: '#92400e',
+    fontWeight: '600'
+  },
+  createCatPromptBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 4
+  },
+  createCatPromptText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff'
+  },
+  catModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  modalContentCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  modalHeaderOrb: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a'
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 6,
+    marginBottom: 16,
+    lineHeight: 18
+  },
+  modalInputGroup: {
+    marginBottom: 14
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6
+  },
+  modalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#0f172a'
+  },
+  typeSelectorRow: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  typeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc'
+  },
+  typeBtnActive: {
+    borderColor: '#16a34a',
+    backgroundColor: 'rgba(22, 163, 74, 0.08)'
+  },
+  typeEmoji: {
+    fontSize: 16
+  },
+  typeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b'
+  },
+  typeBtnTextActive: {
+    color: '#16a34a'
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 10
+  },
+  catModalCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9'
+  },
+  catModalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b'
+  },
+  catModalSubmitBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#16a34a',
+    minWidth: 110,
+    alignItems: 'center'
+  },
+  catModalSubmitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff'
+  },
+  parentCatChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc'
+  },
+  parentCatChipActive: {
+    borderColor: '#16a34a',
+    backgroundColor: 'rgba(22, 163, 74, 0.1)'
+  },
+  parentCatChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b'
+  },
+  parentCatChipTextActive: {
+    color: '#16a34a',
+    fontWeight: '700'
   }
 });

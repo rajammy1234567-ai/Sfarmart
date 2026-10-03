@@ -42,6 +42,8 @@ import connectDB from './config/db.js';
 import { seedAdmin } from './controllers/adminController.js';
 import { initSocket } from './socket/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { recoverPendingPushReceipts, startPushReceiptWorker, stopPushReceiptWorker } from './services/notify.js';
+import { recoverPendingDispatches } from './services/riderAssignmentService.js';
 
 import authRoutes from './routes/authRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
@@ -64,8 +66,47 @@ const PORT = process.env.PORT || 5000;
 // Initialize Socket.io
 const io = initSocket(httpServer);
 
-// ---- NEW: Security middleware ----
+// ---- Security & CORS middleware ----
 app.use(helmet());
+
+// CORS with allowlist (placed before body parsing & routes so OPTIONS preflight resolves immediately)
+const clientOrigins = process.env.CLIENT_ORIGINS
+  ? process.env.CLIENT_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
+const isDevOrStaging =
+  process.env.NODE_ENV !== 'production' ||
+  process.env.STAGING_MODE === 'true' ||
+  process.env.NODE_ENV === 'staging';
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile native apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // In development / staging: allow local admin web (Vite on 5173-5179) and local apps (8081-8085)
+      if (isDevOrStaging) {
+        if (/^http:\/\/(localhost|127\.0\.0\.1):(517[3-9]|808[1-5])$/.test(origin)) {
+          return callback(null, true);
+        }
+      }
+
+      // Explicitly configured client origins (production and custom staging domains)
+      if (clientOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Reject all other origins
+      return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    credentials: true,
+    optionsSuccessStatus: 204,
+  })
+);
+
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
   Object.defineProperty(req, 'query', {
@@ -78,22 +119,6 @@ app.use((req, res, next) => {
 });
 app.use(mongoSanitize());
 app.set('trust proxy', 1);
-
-// CORS with allowlist
-const clientOrigins = process.env.CLIENT_ORIGINS ? process.env.CLIENT_ORIGINS.split(',') : [];
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // mobile apps
-      if (process.env.NODE_ENV !== 'production' && /localhost:808[1-5]/.test(origin))
-        return callback(null, true);
-      if (clientOrigins.includes(origin)) return callback(null, true);
-      callback(new Error('Not allowed by CORS'));
-    },
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
 
 // Rate limiting per route
 const loginLimiter = rateLimit({
@@ -211,9 +236,23 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('🚨 Unhandled Rejection trapped at:', promise, 'reason:', reason);
 });
 
+// Graceful Shutdown hooks
+function handleShutdown(signal) {
+  console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+  stopPushReceiptWorker();
+}
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+
 // Start Server with Socket.IO
 httpServer.listen(PORT, () => {
   console.log(`🌾 Farmart Real-Time Backend running on http://localhost:${PORT}`);
+  // Background recovery worker for pending push delivery receipts across server restarts
+  startPushReceiptWorker({
+    intervalMs: Number(process.env.RECEIPT_WORKER_INTERVAL_MS) || 2000
+  });
+  // Background recovery of pending rider offers and redispatches across server restarts
+  recoverPendingDispatches().catch((err) => console.error('[RiderAssignment] Error during startup recovery:', err));
 });
 
 export { app, httpServer, io };

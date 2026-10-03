@@ -314,14 +314,45 @@ export const apiService = {
   },
 
   // Categories
-  getCategories: async (type) => {
+  getHomeCategories: async (type) => {
     try {
-      const url = type ? `/categories?type=${type}` : '/categories';
+      const url = type ? `/categories?home=true&type=${type}` : '/categories?home=true';
+      const response = await apiClient.get(url);
+      return response.data;
+    } catch (error) {
+      console.warn('Failed to fetch home categories:', error.message);
+      return {
+        success: false,
+        categories: [],
+        isNetworkError: Boolean(error?.isNetworkError || !error?.response),
+        message: error?.message || 'Failed to fetch categories'
+      };
+    }
+  },
+
+  getCategories: async (params = {}) => {
+    try {
+      let url = '/categories';
+      if (typeof params === 'string') {
+        url = `/categories?type=${params}`;
+      } else if (params && typeof params === 'object') {
+        const q = new URLSearchParams();
+        if (params.type) q.append('type', params.type);
+        if (params.home) q.append('home', 'true');
+        if (params.partner) q.append('partner', 'true');
+        const qs = q.toString();
+        if (qs) url = `/categories?${qs}`;
+      }
       const response = await apiClient.get(url);
       return response.data;
     } catch (error) {
       console.warn('Failed to fetch categories:', error.message);
-      return { success: false, categories: [] };
+      return {
+        success: false,
+        categories: [],
+        isNetworkError: Boolean(error?.isNetworkError || !error?.response),
+        message: error?.message || 'Failed to fetch categories'
+      };
     }
   },
 
@@ -537,6 +568,34 @@ export const apiService = {
       return response.data;
     } catch (error) {
       return error.response?.data || { success: false, message: error.message };
+    }
+  },
+
+  registerPushToken: async ({ token, platform = 'android', deviceId = null }) => {
+    try {
+      const response = await apiClient.post('/auth/push-token', {
+        token,
+        platform,
+        deviceId,
+        tokenType: 'expo'
+      });
+      return response.data;
+    } catch (error) {
+      console.warn('Failed to register push token:', error.response?.data || error.message);
+      return { success: false, message: error.message };
+    }
+  },
+
+  unregisterPushToken: async ({ token = null, deviceId = null } = {}) => {
+    try {
+      const response = await apiClient.post('/auth/push-token/unregister', {
+        token,
+        deviceId
+      });
+      return response.data;
+    } catch (error) {
+      console.warn('Failed to unregister push token:', error.response?.data || error.message);
+      return { success: false, message: error.message };
     }
   }
 };

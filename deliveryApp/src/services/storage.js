@@ -117,6 +117,15 @@ export const storage = {
     await this.removeItem(RIDER_DATA_KEY);
     await this.removeItem(RIDER_TOKEN_KEY);
     await this.removeItem(RIDER_REFRESH_KEY);
+  },
+
+  async getDeviceId() {
+    let id = await this.getItem('sfarmart_delivery_device_id');
+    if (!id) {
+      id = 'dev_rider_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+      await this.setItem('sfarmart_delivery_device_id', id);
+    }
+    return id;
   }
 };
 

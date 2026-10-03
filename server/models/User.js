@@ -65,6 +65,14 @@ const userSchema = new mongoose.Schema(
     defaultAddressId: {
       type: mongoose.Schema.Types.ObjectId
     },
+    expoPushTokens: [
+      {
+        token: { type: String, required: true },
+        platform: { type: String, default: 'android' },
+        deviceId: { type: String, default: null },
+        updatedAt: { type: Date, default: Date.now }
+      }
+    ],
     fcmTokens: [
       {
         token: String,

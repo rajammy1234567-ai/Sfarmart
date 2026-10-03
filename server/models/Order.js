@@ -133,6 +133,12 @@ const orderSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    currentOffer: {
+      rider: { type: mongoose.Schema.Types.ObjectId, ref: 'Rider', default: null },
+      expiresAt: { type: Date, default: null },
+      offerId: { type: String, default: null },
+      offeredAt: { type: Date, default: null }
+    },
     riderLocation: { lat: Number, lng: Number, speed: Number, heading: Number, accuracy: Number, at: Date },
     deliveryRoute: [
       {

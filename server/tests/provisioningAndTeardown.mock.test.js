@@ -226,7 +226,9 @@ test('3. Error sanitization in provisionStagingDatabase prevents credential and 
         await provisionStagingDatabase(`mongodb+srv://${APPROVED_STAGING_HOST}/${APPROVED_DATABASE}`);
       },
       (err) => {
-        assert.equal(err.message, 'FAIL-CLOSED [STAGE:CONNECT]: Database connection failed. Credentials and connection string have been sanitized from this message.');
+        assert.match(err.message, /FAIL-CLOSED \[STAGE:CONNECT\]: Database connection failed/);
+        assert.match(err.message, /Classification:\s+(NETWORK_TIMEOUT|ATLAS_IP_ACCESS)/);
+        assert.match(err.message, /Credentials and connection string have been sanitized/);
         assert.equal(err.message.includes('SUPER_SECRET_PASSWORD'), false);
         return true;
       }

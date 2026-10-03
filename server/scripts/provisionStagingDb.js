@@ -151,6 +151,82 @@ export const REQUIRED_SCHEMA = Object.freeze({
         options: { expireAfterSeconds: 0, name: 'expiresAt_1' }
       }
     ])
+  }),
+  categories: Object.freeze({
+    indexes: Object.freeze([
+      {
+        keys: { slug: 1 },
+        options: { unique: true, name: 'slug_1' }
+      },
+      {
+        keys: { nameNormalized: 1 },
+        options: { unique: true, sparse: true, name: 'nameNormalized_1' }
+      },
+      {
+        keys: { type: 1, sortOrder: 1 },
+        options: { name: 'type_1_sortOrder_1' }
+      }
+    ])
+  }),
+  categoryrequests: Object.freeze({
+    indexes: Object.freeze([
+      {
+        keys: { vendor: 1, nameNormalized: 1 },
+        options: {
+          unique: true,
+          partialFilterExpression: { status: 'PENDING' },
+          name: 'vendor_1_nameNormalized_1'
+        }
+      },
+      {
+        keys: { status: 1, createdAt: -1 },
+        options: { name: 'status_1_createdAt_-1' }
+      },
+      {
+        keys: { vendor: 1, status: 1 },
+        options: { name: 'vendor_1_status_1' }
+      }
+    ])
+  }),
+  admins: Object.freeze({
+    indexes: Object.freeze([
+      {
+        keys: { username: 1 },
+        options: { unique: true, name: 'username_1' }
+      }
+    ])
+  }),
+  pushreceipts: Object.freeze({
+    indexes: Object.freeze([
+      {
+        keys: { ticketId: 1 },
+        options: { unique: true, name: 'ticketId_1' }
+      },
+      {
+        keys: { nextCheckAt: 1 },
+        options: { name: 'nextCheckAt_1' }
+      },
+      {
+        keys: { status: 1 },
+        options: { name: 'status_1' }
+      },
+      {
+        keys: { cleanupStatus: 1 },
+        options: { name: 'cleanupStatus_1' }
+      },
+      {
+        keys: { leaseToken: 1 },
+        options: { name: 'leaseToken_1' }
+      },
+      {
+        keys: { leaseExpiresAt: 1 },
+        options: { name: 'leaseExpiresAt_1' }
+      },
+      {
+        keys: { createdAt: 1 },
+        options: { expireAfterSeconds: 7 * 24 * 60 * 60, name: 'createdAt_1' }
+      }
+    ])
   })
 });
 
@@ -422,6 +498,112 @@ export async function executeProvisioningPlan(db) {
   };
 }
 
+export function classifyConnectionError(err) {
+  if (!err) {
+    return {
+      name: 'UnknownError',
+      code: 'N/A',
+      codeName: 'N/A',
+      classification: 'UNKNOWN',
+      hint: 'No error details provided.'
+    };
+  }
+
+  const name = err.name || (err.constructor && err.constructor.name) || 'Error';
+  const code = err.code !== undefined && err.code !== null ? String(err.code) : 'N/A';
+  const codeName = err.codeName || 'N/A';
+  const rawMsg = typeof err.message === 'string' ? err.message : '';
+
+  // 1. Authentication classification
+  // MongoDB Atlas auth errors: code 8000 (AtlasError) or code 18 (AuthenticationFailed)
+  if (
+    code === '18' ||
+    code === '8000' ||
+    codeName === 'AuthenticationFailed' ||
+    /auth.*failed|bad auth|AuthenticationFailed/i.test(rawMsg)
+  ) {
+    return {
+      name,
+      code,
+      codeName,
+      classification: 'AUTHENTICATION',
+      hint: 'Authentication failed for staging setup user. Ensure the username and password are correct in Atlas Database Users.'
+    };
+  }
+
+  // 2. DNS classification
+  if (
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    err.syscall === 'querySrv' ||
+    err.syscall === 'getaddrinfo' ||
+    /ENOTFOUND|EAI_AGAIN|querySrv|getaddrinfo/i.test(rawMsg)
+  ) {
+    return {
+      name,
+      code,
+      codeName,
+      classification: 'DNS',
+      hint: 'DNS resolution failed for the staging cluster. Check local DNS settings and internet connectivity.'
+    };
+  }
+
+  // 3. TLS / SSL classification
+  if (
+    code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+    code === 'CERT_HAS_EXPIRED' ||
+    code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
+    /SSL|TLS|certificate|handshake|self-signed/i.test(rawMsg)
+  ) {
+    return {
+      name,
+      code,
+      codeName,
+      classification: 'TLS',
+      hint: 'TLS/SSL handshake or certificate validation failed. Check system root certificates and TLS configuration.'
+    };
+  }
+
+  // 4. Atlas IP Access classification
+  // Dropped connections by Atlas cluster gateway or explicit IP whitelist mentions
+  if (
+    /whitelisted|IP.*access|IP.*address|could not connect to any servers/i.test(rawMsg) ||
+    (name.includes('ServerSelectionError') && /connection.*closed|ECONNREFUSED/i.test(rawMsg))
+  ) {
+    return {
+      name,
+      code,
+      codeName,
+      classification: 'ATLAS_IP_ACCESS',
+      hint: 'Connection rejected or dropped by Atlas cluster gateway. Likely cause: client IP is not in Atlas Network Access list.'
+    };
+  }
+
+  // 5. Network Timeout classification
+  if (
+    code === 'ETIMEDOUT' ||
+    code === 'ESOCKETTIMEDOUT' ||
+    name === 'MongoNetworkTimeoutError' ||
+    /timed out/i.test(rawMsg)
+  ) {
+    return {
+      name,
+      code,
+      codeName,
+      classification: 'NETWORK_TIMEOUT',
+      hint: 'Connection timed out while reaching MongoDB Atlas cluster. Check network latency, firewall rules on port 27017, or Atlas IP access.'
+    };
+  }
+
+  return {
+    name,
+    code,
+    codeName,
+    classification: 'UNKNOWN',
+    hint: 'Connection failed with an unclassified error.'
+  };
+}
+
 export async function provisionStagingDatabase(rawUri) {
   if (!rawUri || typeof rawUri !== 'string' || !rawUri.trim()) {
     throw new Error('FAIL-CLOSED [STAGE:URI_VALIDATION]: STAGING_SETUP_MONGO_URI environment variable is required.');
@@ -461,10 +643,20 @@ export async function provisionStagingDatabase(rawUri) {
       await mongoose.connect(rawUri, {
         autoIndex: false,
         autoCreate: false,
-        dbName: APPROVED_DATABASE
+        dbName: APPROVED_DATABASE,
+        serverSelectionTimeoutMS: 8000
       });
-    } catch {
-      throw new Error('FAIL-CLOSED [STAGE:CONNECT]: Database connection failed. Credentials and connection string have been sanitized from this message.');
+    } catch (err) {
+      const diag = classifyConnectionError(err);
+      throw new Error(
+        `FAIL-CLOSED [STAGE:CONNECT]: Database connection failed.\n` +
+        `  Error Name:       ${diag.name}\n` +
+        `  Error Code:       ${diag.code}\n` +
+        `  Error CodeName:   ${diag.codeName}\n` +
+        `  Classification:   ${diag.classification}\n` +
+        `  Diagnostic Hint:  ${diag.hint}\n` +
+        `  Credentials and connection string have been sanitized from this message.`
+      );
     }
 
     const activeDbName = mongoose.connection.name;

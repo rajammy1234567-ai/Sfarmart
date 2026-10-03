@@ -1,14 +1,54 @@
 import {sendCurrentLocation,startBackgroundLocation,stopBackgroundLocation} from '../services/location';
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import storage from '../services/storage';
 import { riderApi } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import { registerForPushNotificationsAsync, setNotificationAuthReady } from '../services/notificationService';
 
 const RiderAuthContext = createContext();
 
 export const RiderAuthProvider = ({ children }) => {
   const [rider, setRider] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const pushTokenRef = useRef(null);
+  const authEpochRef = useRef(0);
+
+  // Sync push token with backend after rider login/restore
+  const syncPushToken = useCallback(async () => {
+    const epoch = authEpochRef.current;
+    try {
+      const pushData = await registerForPushNotificationsAsync();
+      if (authEpochRef.current !== epoch) return;
+      if (pushData?.token) {
+        const deviceId = await storage.getDeviceId();
+        if (authEpochRef.current !== epoch) return;
+        await riderApi.registerPushToken({
+          token: pushData.token,
+          platform: pushData.platform,
+          deviceId
+        });
+        if (authEpochRef.current === epoch) {
+          pushTokenRef.current = pushData.token;
+        }
+      }
+    } catch (err) {
+      console.warn('[RiderPush] Failed to sync push token:', err);
+    }
+  }, []);
+
+  // Cleanup push token association on logout to prevent cross-account push leakage
+  const cleanupPushToken = useCallback(async () => {
+    try {
+      const deviceId = await storage.getDeviceId();
+      await riderApi.unregisterPushToken({
+        token: pushTokenRef.current,
+        deviceId
+      }).catch(() => {});
+      pushTokenRef.current = null;
+    } catch (err) {
+      console.warn('[RiderPush] Failed to unregister push token:', err);
+    }
+  }, []);
 
   // Restore authenticated session from persistent storage on boot
   useEffect(() => {
@@ -18,7 +58,10 @@ export const RiderAuthProvider = ({ children }) => {
         const token = await storage.getToken();
 
         if (storedRider && token) {
+          authEpochRef.current += 1;
           setRider(storedRider);
+          setNotificationAuthReady(true);
+          syncPushToken();
           // Connect socket in background
           connectSocket();
 
@@ -43,12 +86,13 @@ export const RiderAuthProvider = ({ children }) => {
     };
 
     restoreSession();
-  }, []);
+  }, [syncPushToken]);
 
   const login = async (phone, password) => {
     const res = await riderApi.login(phone, password);
     const { token, refreshToken, rider: riderData } = res.data;
 
+    authEpochRef.current += 1;
     disconnectSocket();
     await stopBackgroundLocation().catch(()=>{});
     await storage.setToken(token);
@@ -56,12 +100,17 @@ export const RiderAuthProvider = ({ children }) => {
     await storage.setRider(riderData);
 
     setRider(riderData);
+    setNotificationAuthReady(true);
+    syncPushToken();
     await connectSocket();
     return riderData;
   };
 
   const logout = async () => {
+    authEpochRef.current += 1;
+    setNotificationAuthReady(false);
     try {
+      await cleanupPushToken();
       await riderApi.logout();
     } catch {
       // Ignore network errors on logout

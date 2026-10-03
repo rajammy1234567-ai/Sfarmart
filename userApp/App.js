@@ -1,12 +1,17 @@
 import React, { Component } from 'react';
 import { StyleSheet, StatusBar, Platform, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { CartProvider } from './src/context/CartContext';
 import { SocketProvider } from './src/context/SocketContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors } from './src/theme/colors';
+import {
+  setNavigationRef,
+  setNotificationAuthReady,
+  initNotificationListeners
+} from './src/services/notificationService';
 
 // Prevent unhandled promise rejections or native errors from crashing the mobile process
 if (typeof global !== 'undefined' && global.ErrorUtils) {
@@ -91,7 +96,19 @@ const linking = {
 
 // Inner container that passes customer auth token and userId to SocketProvider
 function UserAppContainer() {
-  const { userProfile, token } = useApp();
+  const { userProfile, token, isAuthenticated } = useApp();
+  const navRef = React.useRef(createNavigationContainerRef()).current;
+
+  React.useEffect(() => {
+    const unsubscribe = initNotificationListeners();
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    setNotificationAuthReady(isAuthenticated);
+  }, [isAuthenticated]);
 
   return (
     <SocketProvider token={token} userId={userProfile?._id || userProfile?.id}>
@@ -99,7 +116,14 @@ function UserAppContainer() {
         <AuthGateProvider>
           <View style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={colors.card} />
-            <NavigationContainer key={userProfile?._id || userProfile?.id || 'guest'} linking={linking}>
+            <NavigationContainer
+              ref={navRef}
+              key={userProfile?._id || userProfile?.id || 'guest'}
+              linking={linking}
+              onReady={() => {
+                setNavigationRef(navRef);
+              }}
+            >
               <RootNavigator />
             </NavigationContainer>
           </View>

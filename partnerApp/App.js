@@ -9,6 +9,7 @@ import { PartnerNavigator } from './src/navigation/PartnerNavigator';
 import { PartnerLoginScreen } from './src/screens/PartnerLoginScreen';
 import { soundAlert } from './src/utils/soundAlert';
 import { colors } from './src/theme/colors';
+import { setNavigationRef, initNotificationListeners } from './src/services/notificationService';
 
 // Prevent unhandled promise rejections or native errors from crashing the mobile process
 if (typeof global !== 'undefined' && global.ErrorUtils) {
@@ -106,7 +107,7 @@ function PartnerContent() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.card} />
-      <NavigationContainer>
+      <NavigationContainer ref={setNavigationRef}>
         <PartnerNavigator connectionMode={connectionMode} />
       </NavigationContainer>
 
@@ -126,6 +127,15 @@ function PartnerContent() {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function App() {
+  React.useEffect(() => {
+    const unsubscribe = initNotificationListeners();
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>

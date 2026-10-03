@@ -1,7 +1,8 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { apiService, setAuthToken, setForceLogoutHandler, setTokenChangedHandler, terminateSession, finalizeSessionTermination, initializeSession } from '../services/api';
 import storage from '../services/storage';
 import { showAlert } from '../utils/alert';
+import { registerForPushNotificationsAsync } from '../services/notificationService';
 
 const AppContext = createContext();
 
@@ -39,6 +40,55 @@ export const AppProvider = ({ children }) => {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [token, setToken] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const pushTokenRef = useRef(null);
+  const authEpochRef = useRef(0);
+
+  // Sync push token with backend after authenticated login/bootstrap
+  const syncPushToken = useCallback(async () => {
+    const epoch = authEpochRef.current;
+    try {
+      const pushData = await registerForPushNotificationsAsync();
+      if (authEpochRef.current !== epoch) {
+        return; // Session changed or logged out while awaiting push permissions/token
+      }
+      if (pushData?.token) {
+        const deviceId = await storage.getDeviceId();
+        if (authEpochRef.current !== epoch) {
+          return;
+        }
+        await apiService.registerPushToken({
+          token: pushData.token,
+          platform: pushData.platform,
+          deviceId
+        });
+        if (authEpochRef.current === epoch) {
+          pushTokenRef.current = pushData.token;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync push token:', err);
+    }
+  }, []);
+
+  // Cleanup push token association on logout to prevent cross-account push leakage
+  const cleanupPushToken = useCallback(async () => {
+    try {
+      const deviceId = await storage.getDeviceId();
+      await apiService.unregisterPushToken({
+        token: pushTokenRef.current,
+        deviceId
+      });
+      pushTokenRef.current = null;
+    } catch (err) {
+      console.warn('Failed to unregister push token:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      syncPushToken();
+    }
+  }, [isAuthenticated, syncPushToken]);
 
   // Farmer portal listings state
   const [farmerListings, setFarmerListings] = useState(INITIAL_FARMER_LISTINGS);
@@ -57,6 +107,10 @@ export const AppProvider = ({ children }) => {
 
   // Shared force logout helper (for session expiry)
   const forceLogout = useCallback(async (reason = 'Session expired. Please login again.') => {
+    authEpochRef.current += 1;
+    try {
+      await cleanupPushToken();
+    } catch (_) {}
     await finalizeSessionTermination();
     setAuthToken(null);
     setToken(null);
@@ -67,7 +121,7 @@ export const AppProvider = ({ children }) => {
         showAlert('Logged Out', reason);
       }, 100);
     }
-  }, []);
+  }, [cleanupPushToken]);
 
   // Register force logout with api client interceptor
   useEffect(() => {
@@ -107,6 +161,7 @@ export const AppProvider = ({ children }) => {
 
   // Login method
   const loginUser = useCallback(async (userOrPhone, password) => {
+    authEpochRef.current += 1;
     initializeSession();
     if (typeof userOrPhone === 'object' && userOrPhone !== null) {
       const accessToken=await storage.getAccessToken();
@@ -138,7 +193,9 @@ export const AppProvider = ({ children }) => {
 
   // Explicit User Logout
   const logoutUser = useCallback(async () => {
+    authEpochRef.current += 1;
     try {
+      await cleanupPushToken();
       await apiService.logout();
     } catch (e) {
       console.warn('Logout API error:', e);
@@ -149,7 +206,7 @@ export const AppProvider = ({ children }) => {
       setUserProfile(null);
       setIsAuthenticated(false);
     }
-  }, []);
+  }, [cleanupPushToken]);
 
   // App Bootstrapping: Restore session from storage & call /api/auth/me
   useEffect(() => {
