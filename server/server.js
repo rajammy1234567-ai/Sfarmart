@@ -107,7 +107,14 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '100kb' }));
+app.use(
+  express.json({
+    limit: '100kb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use((req, res, next) => {
   Object.defineProperty(req, 'query', {
     value: { ...req.query },

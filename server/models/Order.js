@@ -67,7 +67,17 @@ const orderSchema = new mongoose.Schema(
       razorpayPaymentId: String,
       razorpaySignature: String,
       verified: { type: Boolean, default: false },
-      paymentId: { type: String }
+      paymentId: { type: String },
+      capturedAt: { type: Date },
+      errorDescription: { type: String },
+      creationClaimId: String,
+      creationClaimExpiresAt: Date,
+      creationState: {
+        type: String,
+        enum: ['IDLE', 'CLAIMED', 'DISPATCHING', 'LINKED', 'RECONCILIATION_REQUIRED'],
+        default: 'IDLE'
+      },
+      unconfirmedRazorpayOrderId: String
     },
     address: {
       name: { type: String, required: true },
