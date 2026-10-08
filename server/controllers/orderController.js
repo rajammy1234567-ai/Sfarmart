@@ -1,3 +1,4 @@
+import { pagination } from '../utils/requestPolicy.js';
 import mongoose from 'mongoose';
 import { validCoordinates, canAccessOrder, canTransition, distanceKm, storePoint, orderForRole } from '../utils/deliveryPolicy.js';
 import Rider from '../models/Rider.js';
@@ -116,13 +117,16 @@ export const createOrder = async (req, res) => {
       });
     }
 
+    if (items.length > 100 || (normalizedClientOrderId && normalizedClientOrderId.length > 128)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ORDER_SIZE', message: 'Order has too many items or an invalid request identifier.' });
+    }
     // Address validation moved after vendor open check
 
 
     if (paymentMethod !== 'COD') {
       return res.status(400).json({ success: false, code: 'PAYMENT_NOT_CONFIGURED', message: 'Online payment verification is not configured. Please choose Cash on Delivery.' });
     }
-    if (items.some(i => !Number.isSafeInteger(i.qty ?? i.quantity ?? 1) || (i.qty ?? i.quantity ?? 1) < 1)) {
+    if (items.some(i => !i || typeof i !== 'object' || !Number.isSafeInteger(i.qty ?? i.quantity ?? 1) || (i.qty ?? i.quantity ?? 1) < 1)) {
       return res.status(400).json({ success: false, code: 'INVALID_QUANTITY', message: 'Item quantities must be positive whole numbers.' });
     }
     // 3. Fetch all products from DB for single-vendor validation & real price calculation
@@ -485,6 +489,7 @@ export const getOrderById = async (req, res) => {
 // @route   GET /api/orders/customer/my
 export const getCustomerOrders = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const customerId = req.user?._id || req.user?.id;
     if (!customerId) {
       return res.status(401).json({
@@ -498,11 +503,11 @@ export const getCustomerOrders = async (req, res) => {
     const orders = await Order.find({ customer: customerId })
       .populate('vendor', 'storeName phone logo address location isOpen')
       .populate('customer', 'name phone').populate('rider', 'name phone vehicleType vehicleNumber rating')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: orders.length,
+      page: paging.page, limit: paging.limit, count: orders.length,
       orders
     });
   } catch (error) {
@@ -514,6 +519,7 @@ export const getCustomerOrders = async (req, res) => {
 // @route   GET /api/orders/vendor/:vendorId
 export const getVendorOrders = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const authUser = req.user;
     if (!authUser) {
       return res.status(401).json({
@@ -548,11 +554,15 @@ export const getVendorOrders = async (req, res) => {
     }
 
     const targetVendorId = requestedVendorId || authenticatedVendorId;
-    const orders = await Order.find({ vendor: targetVendorId })
+    const query = { vendor: targetVendorId };
+    if (req.query?.status === 'active') {
+      query.status = { $in: ['NEW_ORDER', 'ACCEPTED', 'PREPARING', 'READY_FOR_RIDER', 'RIDER_ASSIGNED', 'RIDER_ARRIVED_STORE', 'OUT_FOR_DELIVERY'] };
+    }
+    const orders = await Order.find(query)
       .populate('customer', 'name phone').populate('rider', 'name phone vehicleType vehicleNumber rating')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
-    res.json({ success: true, count: orders.length, orders });
+    res.json({ success: true, page: paging.page, limit: paging.limit, count: orders.length, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });
   }

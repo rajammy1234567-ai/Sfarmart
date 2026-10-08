@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   StatusBar,
   Platform,
-  Alert
+  Alert,
+  AppState
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { startPolling } from '../../services/requestPolicy';
 import { apiService } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { useCustomerSocket } from '../../context/SocketContext';
@@ -27,6 +29,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
   const [products, setProducts] = useState([]);
   const [selectedSubCat, setSelectedSubCat] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
+  const [productError, setProductError] = useState('');
 
   const {
     items,
@@ -41,7 +44,16 @@ export const VendorStoreScreen = ({ route, navigation }) => {
     clearEntireCart
   } = useCart();
 
-  const { productStockUpdate } = useCustomerSocket();
+  const { productStockUpdate, watchCatalog, reconnectCount } = useCustomerSocket();
+
+  useEffect(() => {
+    let release = () => {};
+    const subscribe = () => { release(); release = watchCatalog(targetVendorId || vendor?._id); };
+    if (navigation.isFocused?.() !== false) subscribe();
+    const onFocus = navigation.addListener('focus', subscribe);
+    const onBlur = navigation.addListener('blur', () => release());
+    return () => { release(); onFocus(); onBlur(); };
+  }, [targetVendorId || vendor?._id, navigation, watchCatalog]);
 
   const isStoreOpen = vendor?.isOpen !== false;
 
@@ -71,12 +83,19 @@ export const VendorStoreScreen = ({ route, navigation }) => {
       fetchVendorDetails(vId);
 
       // Periodic polling to stay updated with live Partner Online/Offline status
-      const interval = setInterval(() => {
-        fetchVendorDetails(vId);
-      }, 6000);
-      return () => clearInterval(interval);
+      return startPolling(() => fetchVendorDetails(vId), {
+        intervalMs: 20000,
+        active: () => navigation.isFocused?.() !== false && (AppState.currentState == null || AppState.currentState === 'active')
+      });
     }
   }, [targetVendorId, vendor?._id]);
+
+  useEffect(() => {
+    if (reconnectCount > 1 && targetVendorId && navigation.isFocused?.() !== false) {
+      fetchProducts(targetVendorId);
+      fetchVendorDetails(targetVendorId);
+    }
+  }, [reconnectCount, targetVendorId]);
 
   const fetchVendorDetails = async (vId) => {
     try {
@@ -92,12 +111,16 @@ export const VendorStoreScreen = ({ route, navigation }) => {
   const fetchProducts = async (vId) => {
     try {
       setIsLoading(true);
+      setProductError('');
       const res = await apiService.getVendorProducts(vId);
       if (res.success && Array.isArray(res.products)) {
         setProducts(res.products);
+      } else {
+        setProductError(res?.message || 'Products could not be loaded. Please retry.');
       }
     } catch (e) {
       console.warn('Failed to load store products:', e);
+      setProductError(e?.message || 'Products could not be loaded. Please retry.');
     } finally {
       setIsLoading(false);
     }
@@ -251,10 +274,15 @@ export const VendorStoreScreen = ({ route, navigation }) => {
           ]}
           showsVerticalScrollIndicator={false}
         >
+          {productError ? (
+            <TouchableOpacity onPress={() => fetchProducts(targetVendorId || vendor?._id)}>
+              <Text style={{ color: '#b91c1c', padding: 16 }}>{productError} Tap to retry.</Text>
+            </TouchableOpacity>
+          ) : null}
           {filteredProducts.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons name="fast-food-outline" size={44} color="#94a3b8" />
-              <Text style={styles.emptyTitle}>No Items in this Section</Text>
+              <Text style={styles.emptyTitle}>{productError ? 'Products temporarily unavailable' : 'No Items in this Section'}</Text>
             </View>
           ) : (
             filteredProducts.map((product) => {

@@ -18,6 +18,9 @@ export const APPROVED_DATABASE = 'farmart_test_disposable';
 export const REQUIRED_SCHEMA = Object.freeze({
   orders: Object.freeze({
     indexes: Object.freeze([
+      { keys: { vendor: 1, createdAt: -1, _id: 1 }, options: { name: 'vendor_1_createdAt_-1__id_1' } },
+      { keys: { status: 1, rider: 1, createdAt: 1 }, options: { name: 'status_1_rider_1_createdAt_1' } },
+      { keys: { 'payment.razorpayOrderId': 1 }, options: { sparse: true, name: 'payment.razorpayOrderId_1' } },
       {
         keys: { orderNumber: 1 },
         options: { unique: true, name: 'orderNumber_1' }
@@ -114,6 +117,8 @@ export const REQUIRED_SCHEMA = Object.freeze({
   }),
   products: Object.freeze({
     indexes: Object.freeze([
+      { keys: { vendor: 1, isActive: 1, inStock: -1, price: 1, _id: 1 }, options: { name: 'vendor_1_isActive_1_inStock_-1_price_1__id_1' } },
+      { keys: { isActive: 1, inStock: -1, createdAt: -1, _id: 1 }, options: { name: 'isActive_1_inStock_-1_createdAt_-1__id_1' } },
       {
         keys: { vendor: 1 },
         options: { name: 'vendor_1' }

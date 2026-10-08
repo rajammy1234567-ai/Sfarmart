@@ -13,7 +13,7 @@ import {
   registerPushToken,
   unregisterPushToken
 } from '../controllers/authController.js';
-import { requireAuth } from '../middleware/auth.js';
+import { verifyToken as requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 

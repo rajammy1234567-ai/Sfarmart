@@ -9,11 +9,13 @@ import {
   StatusBar,
   Platform,
   Animated,
-  ActivityIndicator
+  ActivityIndicator,
+  AppState
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components/Header';
 import { LiveOrderMap } from '../../components/LiveOrderMap';
+import { startPolling } from '../../services/requestPolicy';
 import { apiService } from '../../services/api';
 import { useCustomerSocket } from '../../context/SocketContext';
 import { useApp } from '../../context/AppContext';
@@ -141,6 +143,10 @@ export const OrderTrackingScreen = ({ route, navigation }) => {
   const prevRiderFixRef = useRef(null);
   const consecutiveRejectionsRef = useRef(0);
   const isMountedRef = useRef(true);
+  const selectedOrderRef = useRef(activeOrder);
+  selectedOrderRef.current = activeOrder;
+  const customerIdRef = useRef(userProfile?._id || userProfile?.id);
+  customerIdRef.current = userProfile?._id || userProfile?.id;
 
   // Keep a 1-second clock to render fresh elapsed seconds
   useEffect(() => {
@@ -373,8 +379,9 @@ export const OrderTrackingScreen = ({ route, navigation }) => {
     }
 
     try {
+      const owner = customerIdRef.current;
       const res = await apiService.getCustomerOrders();
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || customerIdRef.current !== owner) return;
 
       if (res && (res.success || res.ok) && Array.isArray(res.orders)) {
         const currentUserId = (userProfile?._id || userProfile?.id)?.toString();
@@ -434,11 +441,24 @@ export const OrderTrackingScreen = ({ route, navigation }) => {
 
     fetchMyOrders(true);
 
-    const interval = setInterval(() => {
-      fetchMyOrders(false);
-    }, 8000);
-
-    return () => clearInterval(interval);
+    // Poll just the selected order, not the customer's complete history every 8 seconds.
+    let disposed = false;
+    const stop = startPolling(async () => {
+      const selected = selectedOrderRef.current;
+      const owner = customerIdRef.current;
+      if (!selected?._id || ['DELIVERED', 'CANCELLED', 'REJECTED'].includes(selected.status)) return;
+      const res = await apiService.getOrderById(selected._id);
+      if (disposed || !isMountedRef.current || customerIdRef.current !== owner ||
+          selectedOrderRef.current?._id !== selected._id || !res?.success || res.order?._id !== selected._id) return;
+      setActiveOrder((prev) => prev && prev._id === selected._id ? {
+        ...prev, ...res.order,
+        status: ['DELIVERED', 'CANCELLED', 'REJECTED'].includes(prev.status) ? prev.status :
+          ['DELIVERED', 'CANCELLED', 'REJECTED'].includes(res.order.status) || getStepIndex(res.order.status) >= getStepIndex(prev.status) ? res.order.status : prev.status
+      } : prev);
+      setOrders((prev) => prev.map((item) => item._id === res.order._id ? { ...item, ...res.order } : item));
+    }, { intervalMs: 15000,
+      active: () => navigation.isFocused?.() !== false && (AppState.currentState == null || AppState.currentState === 'active') });
+    return () => { disposed = true; stop(); };
   }, [isAuthenticated, userProfile?._id, userProfile?.id]);
 
   const currentStepIdx = getStepIndex(activeOrder?.status || 'NEW_ORDER');

@@ -65,10 +65,10 @@ test('Offline Category Management & Discovery Test Suite', async (t) => {
   t.beforeEach(() => {
     Category.find = () => ({ sort: () => [] });
     Category.findOne = async () => null;
-    Vendor.find = () => ({ populate: () => ({ sort: () => [] }) });
+    Vendor.find = () => ({ populate: () => ({ sort: () => ({ skip: () => ({ limit: () => [] }) }) }) });
     Vendor.findById = async () => null;
     Vendor.findByIdAndUpdate = async () => null;
-    Product.find = () => ({ populate: () => ({ populate: () => ({ sort: () => [] }), sort: () => [] }) });
+    Product.find = () => ({ populate: () => ({ populate: () => ({ sort: () => ({ skip: () => ({ limit: () => [] }) }) }), sort: () => ({ skip: () => ({ limit: () => [] }) }) }) });
     Product.findById = async () => null;
     Product.findByIdAndUpdate = () => ({ populate: async () => null });
     Product.findByIdAndDelete = async () => null;
@@ -381,6 +381,14 @@ test('Offline Category Management & Discovery Test Suite', async (t) => {
       save: async () => { saveCalled = true; }
     };
     Product.findById = async () => stockProdDoc;
+    const originalAtomicStock = Product.findOneAndUpdate;
+    t.after(() => { Product.findOneAndUpdate = originalAtomicStock; });
+    Product.findOneAndUpdate = async (filter, pipeline) => {
+      assert.equal(String(filter.vendor), String(ownerVendorId));
+      assert.equal(pipeline[0].$set.inStock, false);
+      stockProdDoc.inStock = false;
+      return stockProdDoc;
+    };
     const stockReq = {
       params: { id: productId },
       user: { role: 'VENDOR', vendorId: ownerVendorId.toString() },
@@ -389,7 +397,8 @@ test('Offline Category Management & Discovery Test Suite', async (t) => {
     const stockRes = createMockRes();
     await toggleProductStock(stockReq, stockRes);
     assert.equal(stockRes.statusCode, 200);
-    assert.equal(saveCalled, true);
+    assert.equal(saveCalled, false);
+    assert.equal(stockRes.body.product.inStock, false);
     assert.equal(String(syncedVendorId), String(ownerVendorId));
 
     // C. Product Delete triggers category sync

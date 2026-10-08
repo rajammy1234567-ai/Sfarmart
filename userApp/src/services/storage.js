@@ -17,6 +17,17 @@ if (Platform.OS !== 'web') {
 const memoryStore = new Map();
 
 export const storage = {
+  // Checkout recovery must not silently fall back to memory after a durable write fails.
+  async setItemStrict(key, value) {
+    if (Platform.OS === 'web') {
+      if (typeof window === 'undefined' || !window.localStorage) throw new Error('Persistent checkout storage is unavailable.');
+      window.localStorage.setItem(key, value);
+    } else {
+      if (!SecureStore) throw new Error('Secure checkout storage is unavailable.');
+      await SecureStore.setItemAsync(key, value);
+    }
+    memoryStore.set(key, value);
+  },
   async setItem(key, value) {
     if (!value) {
       await this.removeItem(key);

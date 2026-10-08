@@ -2,6 +2,9 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Admin from '../models/Admin.js';
+import Vendor from '../models/Vendor.js';
+import Rider from '../models/Rider.js';
+import { accountLimiter } from './accountLimiter.js';
 
 const getJwtAccessSecret = () => process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
@@ -30,7 +33,7 @@ export const requireAuth = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     let decoded;
     try {
-      decoded = jwt.verify(token, jwtSecret);
+      decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
     } catch (jwtErr) {
       const code = jwtErr.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN';
       return res.status(401).json({
@@ -91,6 +94,10 @@ export const requireAuth = async (req, res, next) => {
 
     // Load full user doc if customer, or populate basic info
     if (decoded.role === 'VENDOR') {
+      const vendorId = decoded.vendorId || userId;
+      if (!mongoose.isValidObjectId(vendorId)) return res.status(401).json({ success: false, code: 'INVALID_TOKEN' });
+      const vendor = await Vendor.findById(vendorId).select('isActive isApproved');
+      if (!vendor || !vendor.isActive || !vendor.isApproved) return res.status(403).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'Merchant account is unavailable.' });
       req.user = {
         _id: userId,
         id: userId,
@@ -104,6 +111,7 @@ export const requireAuth = async (req, res, next) => {
     }
 
     if (decoded.role === 'RIDER') {
+      if (!mongoose.isValidObjectId(userId) || !await Rider.exists({ _id: userId })) return res.status(401).json({ success: false, code: 'USER_NOT_FOUND' });
       req.user = {
         _id: userId,
         id: userId,
@@ -193,7 +201,7 @@ export const optionalAuth = async (req, res, next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       const jwtSecret = getJwtAccessSecret();
-      const decoded = jwtSecret ? jwt.verify(token, jwtSecret) : null;
+      const decoded = jwtSecret ? jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) : null;
       if (!decoded) return next();
       const userId = decoded.sub || decoded.id;
       if (userId) {
@@ -215,7 +223,7 @@ export const optionalAuth = async (req, res, next) => {
 };
 
 // Backward-compatibility export
-export const verifyToken = requireAuth;
+export const verifyToken = (req, res, next) => requireAuth(req, res, () => accountLimiter(req, res, next));
 
 export const requireSuperAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'ADMIN' || req.user.adminRole !== 'superadmin') {

@@ -425,14 +425,14 @@ test('Subcategory and Product Flow Test Suite', async (t) => {
         return {
           populate: () => ({
             populate: () => ({
-              sort: () => Promise.resolve([
+              sort: () => ({ skip: () => ({ limit: () => Promise.resolve([
                 {
                   _id: new mongoose.Types.ObjectId(),
                   name: 'Organic Radish Microgreens',
                   category: freshFruitsVegId,
                   subCategory: 'Microgreens'
                 }
-              ])
+              ]) }) })
             })
           })
         };

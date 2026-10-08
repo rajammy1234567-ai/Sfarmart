@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config/env';
 import storage from './storage';
+import { collectPages, createSingleFlight, withReadRetry, isDefinitiveAuthFailure } from './requestPolicy';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -149,6 +150,7 @@ export const refreshAuthToken = () => {
       ) {
         throw refreshErr;
       }
+      if (!isDefinitiveAuthFailure(refreshErr)) throw refreshErr;
       await storage.clearTokens();
       if (typeof forceLogoutHandler === 'function') {
         forceLogoutHandler('Session expired. Please login again.');
@@ -175,7 +177,8 @@ apiClient.interceptors.response.use(
         ok: false,
         code: 'NETWORK_ERROR',
         message: 'Network connection error. Please check your internet connection.',
-        isNetworkError: true
+        isNetworkError: true,
+        status: undefined
       };
       return Promise.reject(normalized);
     }
@@ -188,10 +191,11 @@ apiClient.interceptors.response.use(
       originalRequest?.url?.includes('/auth/refresh') ||
       originalRequest?.url?.includes('/auth/customer/login');
 
-    if (status === 401 && !originalRequest._retry && !isAuthRoute) {
+    if (status === 401 && originalRequest && !originalRequest._retry && !isAuthRoute) {
       originalRequest._retry = true;
       try {
         const freshAccessToken = await refreshAuthToken();
+        if (!freshAccessToken) throw Object.assign(new Error('Session changed'), { code: 'SESSION_TERMINATED' });
         originalRequest.headers.Authorization = `Bearer ${freshAccessToken}`;
         return apiClient(originalRequest);
       } catch (refreshErr) {
@@ -199,7 +203,8 @@ apiClient.interceptors.response.use(
       }
     }
 
-    return Promise.reject(error.response?.data || error);
+    return Promise.reject({ ...error.response?.data, message: error.response?.data?.message || error.message,
+      status, response: error.response, code: error.response?.data?.code || error.code });
   }
 );
 
@@ -210,6 +215,21 @@ export const setAuthToken = (token) => {
   } else {
     delete apiClient.defaults.headers.common['Authorization'];
   }
+};
+
+const readFlight = createSingleFlight();
+const readGet = (url, options = {}) => {
+  const epoch = sessionEpoch;
+  return readFlight(JSON.stringify([epoch, url, options]), () => withReadRetry(async () => {
+    if (sessionEpoch !== epoch || isTeardownSuspended) {
+      throw Object.assign(new Error('Session changed'), { code: 'SESSION_TERMINATED' });
+    }
+    return apiClient.get(url, options);
+  }));
+};
+const readList = async (url, field, params = {}) => {
+  if (params.page != null || params.limit != null) return (await readGet(url, { params })).data;
+  return collectPages(async (paging) => (await readGet(url, { params: { ...params, ...paging } })).data, field);
 };
 
 export const apiService = {
@@ -375,8 +395,7 @@ export const apiService = {
   // Vendors
   getVendors: async (params = {}) => {
     try {
-      const response = await apiClient.get('/vendors', { params });
-      return response.data;
+      return await readList('/vendors', 'vendors', params);
     } catch (error) {
       console.warn('Failed to fetch vendors:', error.message);
       return { success: false, vendors: [] };
@@ -385,7 +404,7 @@ export const apiService = {
 
   getVendorById: async (id) => {
     try {
-      const response = await apiClient.get(`/vendors/${id}`);
+      const response = await readGet(`/vendors/${id}`);
       return response.data;
     } catch (error) {
       console.warn('Failed to fetch vendor:', error.message);
@@ -395,48 +414,18 @@ export const apiService = {
 
   getVendorProducts: async (vendorId, params = {}) => {
     try {
-      const response = await apiClient.get(
-  `/vendors/${vendorId}/products`,
-  {
-    params: {
-  ...params,
-  _diagnostic: Date.now(),
-},
-  }
-);
-	console.log('[VendorProducts]', {
-  vendorId,
-  baseURL: apiClient.defaults.baseURL,
-  status: response.status,
-  success: response.data?.success,
-  count: response.data?.products?.length,
-});
-console.log(
-  '[VendorProducts body]',
-  JSON.stringify(response.data)?.slice(0, 1500)
-);
-console.log('[VendorProducts headers]', {
-  contentType: response.headers?.['content-type'],
-  contentEncoding: response.headers?.['content-encoding'],
-  dataType: typeof response.data,
-});
-      return response.data;
+      // Preserve the working Android/proxy cache-busting workaround until device validation.
+      return await readList(`/vendors/${vendorId}/products`, 'products', { ...params, _diagnostic: Date.now() });
     } catch (error) {
-      console.warn('[VendorProducts failed]', {
-  vendorId,
-  status: error.response?.status,
-  code: error.code,
-  message: error.message,
-});
-      return { success: false, products: [] };
+      console.warn('Failed to fetch vendor products:', error.code || error.message);
+      return { success: false, products: [], code: error.code, message: error.message };
     }
   },
 
   // Products
   getProducts: async (params = {}) => {
     try {
-      const response = await apiClient.get('/products', { params });
-      return response.data;
+      return await readList('/products', 'products', params);
     } catch (error) {
       console.warn('Backend products fetch failed:', error.message);
       return { success: false, products: [] };
@@ -512,7 +501,7 @@ console.log('[VendorProducts headers]', {
       const response = await apiClient.post('/cart/validate');
       return response.data;
     } catch (error) {
-      return { ok: false, isValid: true, changes: [] };
+      return { ok: false, isValid: false, changes: [], message: 'Cart could not be checked. Please retry.' };
     }
   },
 
@@ -532,7 +521,7 @@ console.log('[VendorProducts headers]', {
       return response.data;
     } catch (error) {
       console.error('Failed to place order:', error.response?.data || error);
-      throw error.response?.data || error;
+      throw error;
     }
   },
 
@@ -564,10 +553,9 @@ console.log('[VendorProducts headers]', {
     }
   },
 
-  getCustomerOrders: async () => {
+  getCustomerOrders: async (params = {}) => {
     try {
-      const response = await apiClient.get('/orders/customer/my');
-      return response.data;
+      return await readList('/orders/customer/my', 'orders', params);
     } catch (error) {
       return { success: false, orders: [] };
     }
@@ -575,7 +563,7 @@ console.log('[VendorProducts headers]', {
 
   getOrderById: async (id) => {
     try {
-      const response = await apiClient.get(`/orders/${id}`);
+      const response = await readGet(`/orders/${id}`);
       return response.data;
     } catch (error) {
       return { success: false, order: null };

@@ -174,6 +174,9 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ vendor: 1, status: 1 });
+orderSchema.index({ vendor: 1, createdAt: -1, _id: 1 });
+orderSchema.index({ status: 1, rider: 1, createdAt: 1 });
+orderSchema.index({ 'payment.razorpayOrderId': 1 }, { sparse: true });
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index(
   { customer: 1, clientOrderId: 1 },

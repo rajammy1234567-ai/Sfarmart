@@ -1,7 +1,7 @@
 import {sendCurrentLocation,startBackgroundLocation,stopBackgroundLocation} from '../services/location';
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import storage from '../services/storage';
-import { riderApi } from '../services/api';
+import { riderApi, beginRiderSession, suspendRiderSession, finishRiderSession } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { registerForPushNotificationsAsync, setNotificationAuthReady } from '../services/notificationService';
 
@@ -12,6 +12,7 @@ export const RiderAuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const pushTokenRef = useRef(null);
   const authEpochRef = useRef(0);
+  const teardownRef = useRef(false);
 
   // Sync push token with backend after rider login/restore
   const syncPushToken = useCallback(async () => {
@@ -52,13 +53,15 @@ export const RiderAuthProvider = ({ children }) => {
 
   // Restore authenticated session from persistent storage on boot
   useEffect(() => {
+    const restoreEpoch = authEpochRef.current;
     const restoreSession = async () => {
       try {
         const storedRider = await storage.getRider();
         const token = await storage.getToken();
 
+        if (authEpochRef.current !== restoreEpoch) return;
         if (storedRider && token) {
-          authEpochRef.current += 1;
+          const profileEpoch = ++authEpochRef.current;
           setRider(storedRider);
           setNotificationAuthReady(true);
           syncPushToken();
@@ -69,7 +72,7 @@ export const RiderAuthProvider = ({ children }) => {
           riderApi
             .getProfile()
             .then((res) => {
-              if (res.data?.success && res.data?.rider) {
+              if (authEpochRef.current === profileEpoch && res.data?.success && res.data?.rider) {
                 setRider(res.data.rider);
                 storage.setRider(res.data.rider);
               }
@@ -89,10 +92,13 @@ export const RiderAuthProvider = ({ children }) => {
   }, [syncPushToken]);
 
   const login = async (phone, password) => {
+    if (teardownRef.current) throw new Error('Sign-out is finishing. Please wait.');
+    const epoch = ++authEpochRef.current;
     const res = await riderApi.login(phone, password);
     const { token, refreshToken, rider: riderData } = res.data;
 
-    authEpochRef.current += 1;
+    if (authEpochRef.current !== epoch) throw new Error('Session changed while signing in.');
+    beginRiderSession();
     disconnectSocket();
     await stopBackgroundLocation().catch(()=>{});
     await storage.setToken(token);
@@ -107,7 +113,10 @@ export const RiderAuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    if (teardownRef.current) return;
+    teardownRef.current = true;
     authEpochRef.current += 1;
+    suspendRiderSession();
     setNotificationAuthReady(false);
     try {
       await cleanupPushToken();
@@ -117,8 +126,10 @@ export const RiderAuthProvider = ({ children }) => {
     }
     await stopBackgroundLocation().catch(()=>{});
     await storage.clearAuth();
+    finishRiderSession();
     disconnectSocket();
     setRider(null);
+    teardownRef.current = false;
   };
 
   const toggleDutyStatus = async () => {

@@ -4,7 +4,7 @@ import {
   verifyRazorpayPayment,
   razorpayWebhook
 } from '../controllers/paymentController.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -14,11 +14,11 @@ router.post('/payments/razorpay/webhook', razorpayWebhook);
 router.post('/payment/razorpay/webhook', razorpayWebhook);
 
 // Authenticated customer checkout endpoints (rate limited in server.js)
-router.post('/create-order', verifyToken, createRazorpayOrder);
-router.post('/verify-payment', verifyToken, verifyRazorpayPayment);
+router.post('/create-order', verifyToken, requireRole('CUSTOMER'), createRazorpayOrder);
+router.post('/verify-payment', verifyToken, requireRole('CUSTOMER'), verifyRazorpayPayment);
 
 // Standard namespace alias (rate limited in server.js)
-router.post('/payment/create-order', verifyToken, createRazorpayOrder);
-router.post('/payment/verify-payment', verifyToken, verifyRazorpayPayment);
+router.post('/payment/create-order', verifyToken, requireRole('CUSTOMER'), createRazorpayOrder);
+router.post('/payment/verify-payment', verifyToken, requireRole('CUSTOMER'), verifyRazorpayPayment);
 
 export default router;

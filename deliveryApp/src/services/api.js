@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import storage from './storage';
+import { createSingleFlight, withReadRetry, isDefinitiveAuthFailure } from './requestPolicy';
 
 export const getBaseUrl = () => {
   if(process.env.EXPO_PUBLIC_API_URL)return process.env.EXPO_PUBLIC_API_URL;
@@ -41,20 +42,11 @@ const api = axios.create({
   }
 });
 
-// Single-flight refresh token queue
-let isRefreshing = false;
-let failedQueue = [];
-
-const processQueue = (error, token = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-  failedQueue = [];
-};
+let riderSessionEpoch = 0;
+let riderTeardown = false;
+export const beginRiderSession = () => { riderSessionEpoch += 1; riderTeardown = false; inFlightRiderRefreshPromise = null; };
+export const suspendRiderSession = () => { riderSessionEpoch += 1; riderTeardown = true; inFlightRiderRefreshPromise = null; };
+export const finishRiderSession = () => { suspendRiderSession(); delete api.defaults.headers.common.Authorization; };
 
 // Request Interceptor: Attach Bearer Token
 api.interceptors.request.use(
@@ -72,15 +64,17 @@ api.interceptors.request.use(
 let inFlightRiderRefreshPromise = null;
 
 export const refreshRiderAuthToken = async () => {
+  if (riderTeardown) throw Object.assign(new Error('Session ended'), { code: 'SESSION_TERMINATED' });
   if (inFlightRiderRefreshPromise) {
     return inFlightRiderRefreshPromise;
   }
 
+  const epoch = riderSessionEpoch;
   inFlightRiderRefreshPromise = (async () => {
     try {
       const refreshToken = await storage.getRefreshToken();
       if (!refreshToken) {
-        throw new Error('No refresh token available');
+        throw Object.assign(new Error('No refresh token available'), { code: 'NO_REFRESH_TOKEN' });
       }
 
       const res = await axios.post(`${API_BASE_URL}/rider/auth/refresh`, { refreshToken }, { timeout: 15000 });
@@ -90,6 +84,10 @@ export const refreshRiderAuthToken = async () => {
         throw new Error('Refresh response missing access token');
       }
 
+      const latest = await storage.getRefreshToken();
+      if (riderTeardown || epoch !== riderSessionEpoch || latest !== refreshToken) {
+        throw Object.assign(new Error('Session changed'), { code: 'SESSION_TERMINATED' });
+      }
       await storage.setToken(newAccessToken);
       if (newRefreshToken) {
         await storage.setRefreshToken(newRefreshToken);
@@ -98,10 +96,10 @@ export const refreshRiderAuthToken = async () => {
       api.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
       return newAccessToken;
     } catch (refreshErr) {
-      await storage.clearAuth();
+      if (epoch === riderSessionEpoch && !riderTeardown && isDefinitiveAuthFailure(refreshErr)) await storage.clearAuth();
       throw refreshErr;
     } finally {
-      inFlightRiderRefreshPromise = null;
+      if (epoch === riderSessionEpoch) inFlightRiderRefreshPromise = null;
     }
   })();
 
@@ -114,7 +112,7 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       if (originalRequest.url?.includes('/rider/auth/login') || originalRequest.url?.includes('/rider/auth/refresh')) {
         return Promise.reject(error);
       }
@@ -133,11 +131,20 @@ api.interceptors.response.use(
   }
 );
 
+const readFlight = createSingleFlight();
+const readGet = (url) => {
+  const epoch = riderSessionEpoch;
+  return readFlight(`${epoch}:${url}`, () => withReadRetry(async () => {
+    if (epoch !== riderSessionEpoch || riderTeardown) throw Object.assign(new Error('Session changed'), { code: 'SESSION_TERMINATED' });
+    return api.get(url);
+  }));
+};
+
 export const riderApi = {
   // Auth
   login: (phone, password) => api.post('/rider/auth/login', { phone, password }),
   logout: () => api.post('/rider/auth/logout'),
-  getProfile: () => api.get('/rider/profile'),
+  getProfile: () => readGet('/rider/profile'),
   registerPushToken: (data) => api.post('/auth/push-token', data),
   unregisterPushToken: (data) => api.post('/auth/push-token/unregister', data),
 
@@ -146,7 +153,7 @@ export const riderApi = {
   sendLocation: (fix) => api.post('/rider/location', fix),
 
   // Order Lifecycle
-  getActiveOrder: () => api.get('/rider/active-order'),
+  getActiveOrder: () => readGet('/rider/active-order'),
   acceptOffer: (orderId) => api.post(`/rider/orders/${orderId}/accept`),
   declineOffer: (orderId) => api.post(`/rider/orders/${orderId}/decline`),
   arrivedAtStore: (orderId) => api.post(`/rider/orders/${orderId}/arrived-store`),
@@ -154,10 +161,10 @@ export const riderApi = {
   verifyDelivery: (orderId, deliveryOtp) => api.post(`/rider/orders/${orderId}/delivery-verify`, { deliveryOtp }),
 
   // Earnings
-  getEarnings: () => api.get('/rider/earnings'),
+  getEarnings: () => readGet('/rider/earnings'),
 
   // Pool
-  getPendingDeliveryOrders: () => api.get('/orders/delivery/pending')
+  getPendingDeliveryOrders: () => readGet('/orders/delivery/pending')
 };
 
 export default api;

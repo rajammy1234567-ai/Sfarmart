@@ -1,10 +1,13 @@
 import React, { createContext, useState, useContext, useEffect, useMemo, useCallback, useRef } from 'react';
 import storage from '../services/storage';
 import { apiService } from '../services/api';
+import { createOrderRecovery } from '../services/orderRecovery';
 import { useApp } from './AppContext';
 import { ClearCartModal } from '../components/ClearCartModal';
 import { CartMergeModal } from '../components/CartMergeModal';
 import { showAlert } from '../utils/alert';
+
+const recoverOrder = createOrderRecovery(storage);
 
 const CartContext = createContext();
 
@@ -13,7 +16,7 @@ const GUEST_CART_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_GUEST_ITEMS = 20;
 
 export const CartProvider = ({ children }) => {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, userProfile } = useApp();
 
   // Cart state: strictly 1 vendor at any time
   const [vendorId, setVendorId] = useState(null);
@@ -550,12 +553,14 @@ export const CartProvider = ({ children }) => {
       customerName: deliveryAddress?.name,
       customerPhone: deliveryAddress?.phone
     };
-    const res = await apiService.placeOrder(orderPayload);
-    if (res && res.success && res.order) {
-      await clearEntireCart();
-      return res.order;
-    }
-    throw new Error(res?.message || 'Failed to place order');
+    return recoverOrder(userProfile?._id || userProfile?.id, orderPayload, async (claimedPayload) => {
+      const res = await apiService.placeOrder(claimedPayload);
+      if (res && res.success && res.order) {
+        await clearEntireCart();
+        return res.order;
+      }
+      throw new Error(res?.message || 'Failed to place order');
+    });
   };
 
   const billSummary = useMemo(() => {

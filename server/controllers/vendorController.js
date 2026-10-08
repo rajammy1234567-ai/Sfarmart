@@ -1,3 +1,4 @@
+import { pagination } from '../utils/requestPolicy.js';
 import mongoose from 'mongoose';
 import {validCoordinates,orderForRole} from '../utils/deliveryPolicy.js';
 import Vendor from '../models/Vendor.js';
@@ -7,6 +8,7 @@ import Category from '../models/Category.js';
 
 export const getAllVendors = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const { storeType, openOnly, category } = req.query;
     const query = { isActive: true };
 
@@ -36,11 +38,11 @@ export const getAllVendors = async (req, res) => {
 
     const vendors = await Vendor.find(query)
       .populate('categories', 'name slug icon type')
-      .sort({ isOpen: -1, rating: -1 });
+      .sort({ isOpen: -1, rating: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: vendors.length,
+      page: paging.page, limit: paging.limit, count: vendors.length,
       vendors
     });
   } catch (err) {
@@ -73,6 +75,7 @@ export const getVendorById = async (req, res) => {
 
 export const getVendorProducts = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const { id } = req.params;
     if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid vendor ID format' });
@@ -85,11 +88,11 @@ export const getVendorProducts = async (req, res) => {
 
     const products = await Product.find(query)
       .populate('category', 'name slug icon type')
-      .sort({ inStock: -1, price: 1 });
+      .sort({ inStock: -1, price: 1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: products.length,
+      page: paging.page, limit: paging.limit, count: products.length,
       products
     });
   } catch (err) {
@@ -130,8 +133,9 @@ export const toggleStoreStatus = async (req, res) => {
 
 export const getVendorOrders = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const vendorId = req.user.vendorId || req.user.id;
-    const { status, limit = 50 } = req.query;
+    const { status } = req.query;
 
     const query = { vendor: vendorId };
 
@@ -145,12 +149,11 @@ export const getVendorOrders = async (req, res) => {
 
     const orders = await Order.find(query)
       .populate('customer', 'name phone')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit, 10));
+      .sort({ createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: orders.length,
+      page: paging.page, limit: paging.limit, count: orders.length,
       orders: orders.map(o=>orderForRole(o,'VENDOR'))
     });
   } catch (err) {

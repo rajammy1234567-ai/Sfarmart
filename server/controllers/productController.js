@@ -1,3 +1,4 @@
+import { pagination } from '../utils/requestPolicy.js';
 import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import Category from '../models/Category.js';
@@ -29,6 +30,7 @@ export const syncVendorCategories = async (vendorId) => {
 // @route   GET /api/products
 export const getAllProducts = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     const { category, vendor, search, isVeg, inStockOnly } = req.query;
     const filter = { isActive: true };
 
@@ -78,11 +80,11 @@ export const getAllProducts = async (req, res) => {
     const products = await Product.find(filter)
       .populate('category', 'name slug icon type')
       .populate('vendor', 'storeName ownerName phone storeType isOpen rating minOrderValue avgPrepTimeMins')
-      .sort({ inStock: -1, createdAt: -1 });
+      .sort({ inStock: -1, createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: products.length,
+      page: paging.page, limit: paging.limit, count: products.length,
       products
     });
   } catch (error) {
@@ -120,6 +122,7 @@ export const getProductById = async (req, res) => {
 // @route   GET /api/products/vendor/:vendorId
 export const getVendorProducts = async (req, res) => {
   try {
+    const paging = pagination(req.query);
     let { vendorId } = req.params;
 
     // If 'default_vendor' or empty, find first active vendor
@@ -134,11 +137,11 @@ export const getVendorProducts = async (req, res) => {
 
     const products = await Product.find({ vendor: vendorId, isActive: true })
       .populate('category', 'name slug icon type')
-      .sort({ inStock: -1, createdAt: -1 });
+      .sort({ inStock: -1, createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
 
     res.json({
       success: true,
-      count: products.length,
+      page: paging.page, limit: paging.limit, count: products.length,
       products
     });
   } catch (error) {
@@ -485,38 +488,47 @@ export const toggleProductStock = async (req, res) => {
       return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'You can only update stock for your own products.' });
     }
 
+    // Aggregation expressions evaluate against the current document under the update lock.
+    // Never save the earlier snapshot after checkout may have deducted stock.
+    let stockExpr;
+    let availabilityExpr;
+    const parseStock = value => {
+      if (typeof value !== 'number' && typeof value !== 'string') return null;
+      if (typeof value === 'string' && !value.trim()) return null;
+      const n = Number(value);
+      return Number.isSafeInteger(n) && Math.abs(n) <= 1000000 ? n : null;
+    };
     if (req.body.addStock !== undefined) {
-      const addAmt = Number(req.body.addStock);
-      product.stockQty = Math.max(0, (product.stockQty || 0) + addAmt);
-      if (product.stockQty > 0) product.inStock = true;
+      const amount = parseStock(req.body.addStock);
+      if (amount === null) return res.status(400).json({ success: false, code: 'INVALID_STOCK' });
+      stockExpr = { $max: [0, { $add: [{ $ifNull: ['$stockQty', 0] }, amount] }] };
+      availabilityExpr = { $gt: [stockExpr, 0] };
     } else if (req.body.stockQty !== undefined || req.body.stock !== undefined) {
-      const newStock = Number(req.body.stockQty !== undefined ? req.body.stockQty : req.body.stock);
-      product.stockQty = Math.max(0, newStock);
-      product.inStock = product.stockQty > 0;
-    } else if (typeof req.body.inStock === 'boolean') {
-      product.inStock = req.body.inStock;
-      if (product.inStock && product.stockQty <= 0) {
-        product.stockQty = 25; // Default replenish on re-enabling
-      }
+      const amount = parseStock(req.body.stockQty ?? req.body.stock);
+      if (amount === null || amount < 0) return res.status(400).json({ success: false, code: 'INVALID_STOCK' });
+      stockExpr = amount;
+      availabilityExpr = amount > 0;
     } else {
-      product.inStock = !product.inStock;
-      if (product.inStock && product.stockQty <= 0) {
-        product.stockQty = 25;
-      }
+      availabilityExpr = typeof req.body.inStock === 'boolean' ? req.body.inStock : { $not: ['$inStock'] };
+      stockExpr = { $cond: [{ $and: [availabilityExpr, { $lte: ['$stockQty', 0] }] }, 25, '$stockQty'] };
     }
-
-    await product.save();
+    const updateFilter = { _id: id };
+    if (req.user?.role !== 'ADMIN') updateFilter.vendor = callerVendorId;
+    const updated = await Product.findOneAndUpdate(updateFilter,
+      [{ $set: { stockQty: stockExpr, inStock: availabilityExpr } }],
+      { new: true, updatePipeline: true });
+    if (!updated) return res.status(409).json({ success: false, code: 'PRODUCT_STATE_CONFLICT' });
 
     // Broadcast stock change to all connected customers and vendor apps in real-time
-    notifyProductStock(product);
+    notifyProductStock(updated);
 
     // Sync vendor categories
-    await syncVendorCategories(product.vendor);
+    await syncVendorCategories(updated.vendor);
 
     res.json({
       success: true,
-      message: `Product stock updated to ${product.stockQty} units (${product.inStock ? 'In Stock' : 'Out of Stock'})`,
-      product
+      message: `Product stock updated to ${updated.stockQty} units (${updated.inStock ? 'In Stock' : 'Out of Stock'})`,
+      product: updated
     });
   } catch (error) {
     console.error('Error toggling stock:', error);

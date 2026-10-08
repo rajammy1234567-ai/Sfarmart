@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
+import { boundedInteger } from '../utils/requestPolicy.js';
 
 dotenv.config();
 dotenv.config({ path: path.resolve(process.cwd(), 'server', '.env') });
@@ -41,6 +42,18 @@ export function sanitizeErrorMessage(msg) {
   return msg.replace(/mongodb(\+srv)?:\/\/[^@]+@/gi, 'mongodb$1://[REDACTED_CREDENTIALS]@');
 }
 
+export const connectionOptions = {
+  maxPoolSize: boundedInteger(process.env.MONGO_MAX_POOL_SIZE, 30, 5, 100),
+  minPoolSize: 0,
+  maxConnecting: 2,
+  waitQueueTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 10000,
+  connectTimeoutMS: 10000,
+  autoIndex: false,
+  autoCreate: false,
+  bufferCommands: false
+};
+
 const connectDB = async () => {
   try {
     const isStagingMode = process.env.STAGING_MODE === 'true' || process.env.NODE_ENV === 'staging';
@@ -52,8 +65,7 @@ const connectDB = async () => {
       }
       validateStagingUri(mongoUri);
       const conn = await mongoose.connect(mongoUri, {
-        autoIndex: false,
-        autoCreate: false,
+        ...connectionOptions,
         dbName: APPROVED_DATABASE
       });
       console.log(`🍃 MongoDB Connected [STAGING MODE]: ${conn.connection.host}/${APPROVED_DATABASE} (autoIndex: false, autoCreate: false)`);
@@ -80,7 +92,7 @@ const connectDB = async () => {
       return false;
     }
 
-    const conn = await mongoose.connect(mongoUri);
+    const conn = await mongoose.connect(mongoUri, connectionOptions);
     console.log(`🍃 MongoDB Connected: ${conn.connection.host}`);
 
     // Verify replica set for ACID multi-document transactions

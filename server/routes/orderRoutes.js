@@ -23,8 +23,8 @@ router.use((req,res,next) => {
   next();
 });
 
-router.post('/orders', verifyToken, createOrder);
-router.get('/orders/customer/my', verifyToken, getCustomerOrders);
+router.post('/orders', verifyToken, requireRole('CUSTOMER'), createOrder);
+router.get('/orders/customer/my', verifyToken, requireRole('CUSTOMER'), getCustomerOrders);
 router.get('/orders/delivery/pending', verifyToken, requireRole('RIDER'), getDeliveryOrders);
 router.get('/orders/delivery', verifyToken, requireRole('RIDER'), getDeliveryOrders);
 router.get('/orders/vendor/:vendorId', verifyToken, getVendorOrders);

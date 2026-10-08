@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import storage from './storage';
 
 let socket = null;
+let connecting = null;
+let generation = 0;
 let ioModule = null;
 
 // Dynamically import socket.io-client to prevent web bundler crashes if resolving
@@ -44,13 +46,24 @@ export const getSocketUrl = () => {
   return 'http://localhost:5000';
 };
 
-export const connectSocket = async () => {
+export const connectSocket = () => {
+  if (socket) return Promise.resolve(socket);
+  if (connecting) return connecting;
+  const epoch = generation;
+  const pending = openSocket(epoch).finally(() => { if (connecting === pending) connecting = null; });
+  connecting = pending;
+  return pending;
+};
+
+const openSocket = async (epoch) => {
   const io = getIO();
   if (!io) return null;
 
   if (socket) return socket;
 
   const token = await storage.getToken();
+  if (epoch !== generation) return null;
+  if (socket) return socket;
   const url = getSocketUrl();
 
   // If no token is available, skip socket connection to avoid unauthenticated requests
@@ -79,6 +92,8 @@ export const connectSocket = async () => {
     timeout: 20000,
   });
 
+  const activeSocket = socket;
+  let serverKicks = 0;
   socket.on('connect', () => {
     console.log(`⚡ [delivery:socket] Connected to ${url} (socket: ${socket.id})`);
   });
@@ -86,12 +101,15 @@ export const connectSocket = async () => {
   socket.on('disconnect', async (reason) => {
     console.log(`🔌 [delivery:socket] Disconnected: ${reason}`);
     if (reason === 'io server disconnect') {
+      if (epoch !== generation || ++serverKicks > 3) return;
+      await new Promise((resolve) => setTimeout(resolve, serverKicks * 1000 + Math.floor(Math.random() * 1000)));
+      if (epoch !== generation || socket !== activeSocket) return;
       // Server disconnected socket due to token expiry or kick.
       // Refresh token first before reconnecting to prevent reading an expired token.
       try {
         const { refreshRiderAuthToken } = require('./api');
         const freshToken = await refreshRiderAuthToken();
-        if (freshToken) {
+        if (freshToken && epoch === generation && socket === activeSocket) {
           console.log('⚡ [delivery:socket] Reconnecting socket with freshly refreshed rider token...');
           socket?.connect();
         }
@@ -111,6 +129,8 @@ export const connectSocket = async () => {
 export const getSocket = () => socket;
 
 export const disconnectSocket = () => {
+  generation += 1;
+  connecting = null;
   if (socket) {
     socket.disconnect();
     socket = null;

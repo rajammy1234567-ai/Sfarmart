@@ -1,4 +1,5 @@
 import express from 'express';
+import { deliveryVerificationLimiter } from '../middleware/accountLimiter.js';
 import { orderForRole } from '../utils/deliveryPolicy.js';
 import {
   riderLogin,
@@ -31,16 +32,16 @@ router.use(verifyToken, requireRole('RIDER'));
 router.post('/auth/logout', riderLogout);
 
 // Protected rider operational routes
-router.patch('/status', verifyToken, toggleRiderStatus);
-router.patch('/duty/status', verifyToken, toggleRiderStatus);
-router.post('/location', verifyToken, updateRiderLocation);
-router.get('/active-order', verifyToken, getActiveDeliveryOrder);
-router.post('/orders/:id/accept', verifyToken, acceptOrderOffer);
-router.post('/orders/:id/decline', verifyToken, declineOrderOffer);
-router.post('/orders/:id/arrived-store', verifyToken, arrivedAtStore);
-router.post('/orders/:id/pickup-verify', verifyToken, verifyPickup);
-router.post('/orders/:id/delivery-verify', verifyToken, verifyDelivery);
-router.get('/profile', verifyToken, getRiderProfile);
-router.get('/earnings', verifyToken, getRiderEarnings);
+router.patch('/status', toggleRiderStatus);
+router.patch('/duty/status', toggleRiderStatus);
+router.post('/location', updateRiderLocation);
+router.get('/active-order', getActiveDeliveryOrder);
+router.post('/orders/:id/accept', acceptOrderOffer);
+router.post('/orders/:id/decline', declineOrderOffer);
+router.post('/orders/:id/arrived-store', arrivedAtStore);
+router.post('/orders/:id/pickup-verify', deliveryVerificationLimiter, verifyPickup);
+router.post('/orders/:id/delivery-verify', deliveryVerificationLimiter, verifyDelivery);
+router.get('/profile', getRiderProfile);
+router.get('/earnings', getRiderEarnings);
 
 export default router;

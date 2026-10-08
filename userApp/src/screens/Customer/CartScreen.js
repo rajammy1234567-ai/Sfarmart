@@ -31,7 +31,7 @@ export const CartScreen = ({ navigation }) => {
     billSummary
   } = useCart();
 
-  const { productStockUpdate } = useCustomerSocket();
+  const { productStockUpdate, watchCatalog } = useCustomerSocket();
   const [vendorDetails, setVendorDetails] = useState(null);
 
   useEffect(() => {
@@ -43,6 +43,15 @@ export const CartScreen = ({ navigation }) => {
       });
     }
   }, [vendorId]);
+
+  useEffect(() => {
+    let release = () => {};
+    const subscribe = () => { release(); release = watchCatalog(vendorId); };
+    if (navigation.isFocused?.() !== false) subscribe();
+    const onFocus = navigation.addListener('focus', subscribe);
+    const onBlur = navigation.addListener('blur', () => release());
+    return () => { release(); onFocus(); onBlur(); };
+  }, [vendorId, navigation, watchCatalog]);
 
   const isStoreOpen = vendorDetails ? vendorDetails.isOpen !== false : true;
 

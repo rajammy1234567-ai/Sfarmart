@@ -18,6 +18,7 @@ export const SocketProvider = ({ children, token, userId }) => {
   const [productStockUpdate, setProductStockUpdate] = useState(null);
   const socketRef = useRef(null);
   const trackedOrderRef=useRef(null);
+  const catalogRefs = useRef(new Map());
   const isIntentionalDisconnectRef = useRef(false);
 
   const [reconnectCount, setReconnectCount] = useState(0);
@@ -65,7 +66,10 @@ export const SocketProvider = ({ children, token, userId }) => {
         },
         transports: ['websocket', 'polling'],
         reconnectionAttempts: 15,
-        reconnectionDelay: 2000
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.5,
+        timeout: 20000
       });
 
       socketRef.current = socket;
@@ -94,11 +98,12 @@ export const SocketProvider = ({ children, token, userId }) => {
             }
           });
         }
-        if (userId) {
-          socket.emit('join:customer', userId);
-        }
+        for (const vendorId of catalogRefs.current.keys()) socket.emit('join:catalog', vendorId);
+        // Authenticated customer room is joined by the server.
       });
 
+      let serverKicks = 0;
+      let disposed = false;
       socket.on('disconnect', async (reason) => {
         console.log('🔌 Customer Socket disconnected:', reason);
         setIsConnected(false);
@@ -115,6 +120,9 @@ export const SocketProvider = ({ children, token, userId }) => {
         }
 
         if (reason === 'io server disconnect') {
+          if (disposed || ++serverKicks > 3) return;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * serverKicks + Math.floor(Math.random() * 1000)));
+          if (disposed || socketRef.current !== socket) return;
           // Server explicitly disconnected us (e.g. token expired or kicked).
           // Do NOT blindly reconnect with the old expired token! Use the single-flight refresh mutex.
           try {
@@ -132,7 +140,7 @@ export const SocketProvider = ({ children, token, userId }) => {
             console.log('⚡ [CustomerSocket] Disconnected by server. Executing single-flight token refresh...');
             const freshAccessToken = await refreshAuthToken();
             if (
-              freshAccessToken &&
+              freshAccessToken && !disposed && socketRef.current === socket &&
               !isIntentionalDisconnectRef.current &&
               !isCurrentSessionTerminated() &&
               !isSessionTeardownSuspended()
@@ -171,6 +179,7 @@ export const SocketProvider = ({ children, token, userId }) => {
       });
 
       return () => {
+        disposed = true;
         isIntentionalDisconnectRef.current = true;
         socket.disconnect();
       };
@@ -221,6 +230,23 @@ export const SocketProvider = ({ children, token, userId }) => {
     }
   }, []);
 
+  const watchCatalog = useCallback((vendorId) => {
+    const id = String(vendorId || '').toLowerCase();
+    if (!/^[a-f0-9]{24}$/.test(id)) return () => {};
+    const count = catalogRefs.current.get(id) || 0;
+    if (!count && catalogRefs.current.size >= 4) return () => {};
+    catalogRefs.current.set(id, count + 1);
+    if (!count && socketRef.current?.connected) socketRef.current.emit('join:catalog', id);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (catalogRefs.current.get(id) || 1) - 1;
+      if (remaining > 0) catalogRefs.current.set(id, remaining);
+      else { catalogRefs.current.delete(id); socketRef.current?.emit('leave:catalog', id); }
+    };
+  }, []);
+
   const contextValue = useMemo(() => ({
     isConnected,
     reconnectCount,
@@ -230,7 +256,8 @@ export const SocketProvider = ({ children, token, userId }) => {
     trackOrder,
     leaveOrder,
     disconnectSocket,
-    restoreSocket
+    restoreSocket,
+    watchCatalog
   }), [
     isConnected,
     reconnectCount,
@@ -240,7 +267,8 @@ export const SocketProvider = ({ children, token, userId }) => {
     trackOrder,
     leaveOrder,
     disconnectSocket,
-    restoreSocket
+    restoreSocket,
+    watchCatalog
   ]);
 
   return (

@@ -925,7 +925,14 @@ export function notifyProductStock(product) {
     };
 
     console.log(`📦 Broadcasting 'product:stock' update for ${product.name || payload.productId}: stock=${payload.stockQty}, inStock=${payload.inStock}`);
-    io.emit('product:stock', payload);
+    if (process.env.SCOPED_STOCK_EVENTS === 'true') {
+      if (!/^[a-f0-9]{24}$/i.test(payload.vendorId || '')) return;
+      // Chained rooms are a union: a vendor/subscriber receives the event at most once.
+      io.to('catalog:' + payload.vendorId.toLowerCase()).to('vendor:' + payload.vendorId).emit('product:stock', payload);
+    } else {
+      // Compatibility window for older mobile releases. Enable scoped delivery after rollout.
+      io.emit('product:stock', payload);
+    }
   } catch (err) {
     console.warn('Failed to broadcast product:stock:', err);
   }

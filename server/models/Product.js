@@ -80,6 +80,8 @@ const productSchema = new mongoose.Schema(
 );
 
 productSchema.index({ vendor: 1, category: 1 });
+productSchema.index({ vendor: 1, isActive: 1, inStock: -1, price: 1, _id: 1 });
+productSchema.index({ isActive: 1, inStock: -1, createdAt: -1, _id: 1 });
 productSchema.index({ name: 'text', tags: 'text' });
 productSchema.index({ isActive: 1, inStock: 1 });
 

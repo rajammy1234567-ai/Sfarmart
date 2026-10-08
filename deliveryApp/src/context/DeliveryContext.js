@@ -1,3 +1,5 @@
+import { AppState } from 'react-native';
+import { startPolling } from '../services/requestPolicy';
 import * as Location from 'expo-location';
 import {locationPayload} from '../services/location';
 import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
@@ -46,7 +48,7 @@ useEffect(() => {
       if (!alive.current) return;
       if (res.data?.success && res.data?.hasActiveOrder) {
         setCurrentTask(res.data.order);
-      } else {
+      } else if (res.data?.success === true && res.data?.hasActiveOrder === false) {
         setCurrentTask(null);
       }
     } catch (err) {
@@ -101,12 +103,10 @@ useEffect(() => {
       refreshEarnings();
       fetchAvailablePool();
 
-      const pollInterval = setInterval(() => {
-        refreshActiveOrder();
-        fetchAvailablePool();
-      }, 12000);
-
-      return () => clearInterval(pollInterval);
+      return startPolling(async () => {
+        await refreshActiveOrder();
+        if (alive.current) await fetchAvailablePool();
+      }, { intervalMs: 12000, active: () => AppState.currentState == null || AppState.currentState === 'active' });
     } else {
       // Cleanup on unauthenticated: clear state and disconnect socket
       setCurrentTask(null);
@@ -121,9 +121,10 @@ useEffect(() => {
     if (!isAuthenticated) return;
 
     let cleanup = null;
+    let cancelled = false;
 
     connectSocket().then((socket) => {
-      if (!socket || !alive.current) return;
+      if (!socket || !alive.current || cancelled) return;
 
       const handleOffer = (offer) => {
         console.log('🔔 [DeliveryContext] Incoming order offer received:', offer);
@@ -151,6 +152,7 @@ useEffect(() => {
     });
 
     return () => {
+      cancelled = true;
       if (cleanup) cleanup();
     };
   }, [isAuthenticated, currentTask, refreshActiveOrder, fetchAvailablePool]);

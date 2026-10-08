@@ -3,6 +3,7 @@ import io from 'socket.io-client/dist/socket.io.js';
 import { soundAlert } from '../utils/soundAlert';
 import { API_BASE_URL } from '../config/env';
 import storage from '../services/storage';
+import { publishStock } from '../services/stockEvents';
 
 const SOCKET_SERVER_URL = API_BASE_URL
   ? API_BASE_URL.replace(/\/api\/?$/, '')
@@ -52,7 +53,10 @@ export const SocketProvider = ({ children, vendor, token, onOrderReceived }) => 
         },
         transports: ['websocket', 'polling'],
         reconnectionAttempts: 20,
-        reconnectionDelay: 2000
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.5,
+        timeout: 20000
       });
 
       socketRef.current = socket;
@@ -87,6 +91,10 @@ export const SocketProvider = ({ children, vendor, token, onOrderReceived }) => 
         console.warn('Socket connection error, falling back to polling:', err.message);
         setIsConnected(false);
         setConnectionMode('POLLING');
+      });
+
+      socket.on('product:stock', (update) => {
+        if (String(update?.vendorId) === String(activeVendorId)) publishStock(update);
       });
 
       // 🔔 Handle incoming new order event with STRICT VENDOR ISOLATION

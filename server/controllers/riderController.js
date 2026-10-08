@@ -221,18 +221,33 @@ export const updateRiderLocation = async (req, res) => {
       return res.json({ success: true, throttled: true });
     }
     state.lastPingAt = now;
+    // Reserve the in-process throttle before yielding to another GPS request.
+    locationRateLimiter.set(riderId, state);
+    if (locationRateLimiter.size > 10000) {
+      for (const [key, value] of locationRateLimiter) if (now - value.lastPingAt > 300000) locationRateLimiter.delete(key);
+    }
 
-    // Ephemeral update on Rider model
-    await Rider.findByIdAndUpdate(riderId, {
+    // A newer fix or changed assignment must not be overwritten by a stale read.
+    const updatedRider = await Rider.findOneAndUpdate({
+      _id: riderId,
+      activeOrderId: rider.activeOrderId || null,
+      locationUpdatedAt: rider.locationUpdatedAt || null
+    }, {
       currentLocation: { type: 'Point', coordinates: [lng, lat] },
       locationUpdatedAt: new Date(capturedAt),
       locationAccuracy: accuracy
-    });
+    }, { new: true });
+    if (!updatedRider) return res.status(409).json({ success: false, code: 'GPS_STATE_CONFLICT', message: 'A newer location or assignment is already recorded. Send a fresh fix.' });
 
     const activeOrderId = activeOrder?._id;
 
     // If rider has an active order, emit live location to that order room
     if (activeOrderId) {
+      const updatedOrder = await Order.findOneAndUpdate({
+        _id: activeOrderId, rider: riderId, status: { $in: activeDeliveryStates },
+        $or: [{ 'riderLocation.at': { $lt: new Date(capturedAt) } }, { 'riderLocation.at': null }]
+      }, { $set: { riderLocation: { lat, lng, speed, heading: effectiveHeading, accuracy, at: new Date(capturedAt) } } }, { new: true });
+      if (!updatedOrder) return res.json({ success: true, timestamp: now, trackingSkipped: true });
       const io = getIO();
       if (io) {
         io.to(`order:${activeOrderId}`).emit('order:rider_location', {
@@ -247,15 +262,10 @@ export const updateRiderLocation = async (req, res) => {
         });
       }
 
-      // Keep Order.riderLocation fresh on active orders for instant reconnect snapshots
-      await Order.findByIdAndUpdate(activeOrderId, {
-        $set: { riderLocation: { lat, lng, speed, heading: effectiveHeading, accuracy, at: new Date(capturedAt) } }
-      });
-
       // Sparse breadcrumbs: write to MongoDB order.deliveryRoute only every ~30s
       if (now - state.lastBreadcrumbAt >= 30000) {
         state.lastBreadcrumbAt = now;
-        await Order.findByIdAndUpdate(activeOrderId, {
+        await Order.findOneAndUpdate({ _id: activeOrderId, rider: riderId, status: { $in: activeDeliveryStates } }, {
           $push: { deliveryRoute: { $each: [{ lat, lng, at: new Date(capturedAt) }], $slice: -1000 } }
         });
       }
