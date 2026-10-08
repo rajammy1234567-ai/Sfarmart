@@ -1,29 +1,82 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
-// Configure foreground notification presentation for partner alerts
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
+let notificationsModule = null;
+let isHandlerConfigured = false;
 let isChannelConfigured = false;
 let navigationRef = null;
 let isAuthReady = false;
 let pendingNotificationTarget = null;
+let hasLoggedExpoGoNotice = false;
 const handledNotificationResponseIds = new Set();
+
+/**
+ * Detect whether the app is executing inside the Android Expo Go store client.
+ * In Expo SDK 53+, remote push notification native functionality was removed
+ * from Android Expo Go, throwing an unrecoverable runtime exception if loaded.
+ */
+export function isAndroidExpoGo() {
+  if (Platform.OS !== 'android') {
+    return false;
+  }
+  const isStoreClient =
+    Constants?.executionEnvironment === ExecutionEnvironment?.StoreClient ||
+    Constants?.executionEnvironment === 'storeClient';
+  return Boolean(isStoreClient || Constants?.appOwnership === 'expo');
+}
+
+/**
+ * Guarded lazy loader for expo-notifications.
+ * In Android Expo Go and Web, strictly returns null without requiring or evaluating the package.
+ * In native builds (standalone/dev-client) and iOS, lazily requires expo-notifications
+ * and configures the foreground presentation handler once.
+ */
+export function getNotifications() {
+  if (Platform.OS === 'web' || isAndroidExpoGo()) {
+    if (isAndroidExpoGo() && !hasLoggedExpoGoNotice) {
+      hasLoggedExpoGoNotice = true;
+      console.log(
+        '[PartnerNotifications] Android Expo Go detected (SDK 53+): remote push notifications are not supported in Expo Go on Android. Bypassing expo-notifications module to prevent startup crash.'
+      );
+    }
+    return null;
+  }
+
+  if (!notificationsModule) {
+    try {
+      // Lazy load expo-notifications only when supported (non-Expo Go Android / iOS / native builds)
+      notificationsModule = require('expo-notifications');
+      if (notificationsModule && !isHandlerConfigured) {
+        notificationsModule.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+        isHandlerConfigured = true;
+      }
+    } catch (err) {
+      console.warn('[PartnerNotifications] Failed to load expo-notifications module:', err?.message || err);
+      return null;
+    }
+  }
+
+  return notificationsModule;
+}
 
 /**
  * Configure high-importance Android notification channel for new incoming vendor orders
  */
 export async function setupNotificationChannel() {
-  if (Platform.OS !== 'android' || isChannelConfigured) {
+  if (Platform.OS !== 'android' || isChannelConfigured || isAndroidExpoGo()) {
+    return;
+  }
+
+  const Notifications = getNotifications();
+  if (!Notifications) {
     return;
   }
 
@@ -46,10 +99,15 @@ export async function setupNotificationChannel() {
 
 /**
  * Request notification permissions and register Expo push token for partner app.
- * Non-blocking: returns null on denial or error without throwing or impeding app use.
+ * Non-blocking: returns null on denial, error, or Android Expo Go without throwing or impeding app use.
  */
 export async function registerForPushNotificationsAsync() {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || isAndroidExpoGo()) {
+    return null;
+  }
+
+  const Notifications = getNotifications();
+  if (!Notifications) {
     return null;
   }
 
@@ -87,7 +145,7 @@ export async function registerForPushNotificationsAsync() {
     }
     return null;
   } catch (err) {
-    console.warn('[PartnerNotifications] Failed to obtain Expo push token:', err.message);
+    console.warn('[PartnerNotifications] Failed to obtain Expo push token:', err?.message || err);
     return null;
   }
 }
@@ -165,40 +223,59 @@ export function setNotificationAuthReady(ready) {
 }
 
 /**
- * Initialize listeners for both warm launch (response listener) and cold launch (last response)
+ * Initialize listeners for both warm launch (response listener) and cold launch (last response).
+ * Safely skipped in Android Expo Go and Web, preserving the cleanup function contract.
  */
 export function initNotificationListeners() {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || isAndroidExpoGo()) {
+    return () => {};
+  }
+
+  const Notifications = getNotifications();
+  if (!Notifications) {
     return () => {};
   }
 
   // 1. Warm / Background Tap Listener
-  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-    try {
-      const responseId = response?.notification?.request?.identifier;
-      const data = response?.notification?.request?.content?.data;
-      handleNotificationData(data, responseId);
-    } catch (err) {
-      console.warn('[PartnerNotifications] Error handling warm notification response:', err);
-    }
-  });
-
-  // 2. Cold Launch Check (App opened directly from a notification tap)
-  Notifications.getLastNotificationResponseAsync().then((response) => {
-    if (response) {
+  let subscription = null;
+  try {
+    subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const responseId = response?.notification?.request?.identifier;
         const data = response?.notification?.request?.content?.data;
         handleNotificationData(data, responseId);
       } catch (err) {
-        console.warn('[PartnerNotifications] Error handling cold notification response:', err);
+        console.warn('[PartnerNotifications] Error handling warm notification response:', err);
       }
-    }
-  }).catch((err) => {
-    console.warn('[PartnerNotifications] Failed to retrieve last notification response:', err);
-  });
+    });
+  } catch (err) {
+    console.warn('[PartnerNotifications] Failed to add notification response listener:', err);
+  }
+
+  // 2. Cold Launch Check (App opened directly from a notification tap)
+  try {
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        try {
+          const responseId = response?.notification?.request?.identifier;
+          const data = response?.notification?.request?.content?.data;
+          handleNotificationData(data, responseId);
+        } catch (err) {
+          console.warn('[PartnerNotifications] Error handling cold notification response:', err);
+        }
+      }
+    }).catch((err) => {
+      console.warn('[PartnerNotifications] Failed to retrieve last notification response:', err);
+    });
+  } catch (err) {
+    console.warn('[PartnerNotifications] Error querying last notification response:', err);
+  }
 
   return () => {
-    subscription.remove();
+    try {
+      subscription?.remove?.();
+    } catch (err) {
+      console.warn('[PartnerNotifications] Error removing notification listener:', err);
+    }
   };
 }

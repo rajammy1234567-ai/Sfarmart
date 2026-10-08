@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
-import { StyleSheet, StatusBar, Platform, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, StatusBar, Platform, View, Text, TouchableOpacity, Image } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { RiderAuthProvider, useRiderAuth } from './src/context/RiderAuthContext';
@@ -18,6 +19,9 @@ if (typeof global !== 'undefined' && global.ErrorUtils) {
       }
     });
   } catch (e) {}
+}
+if (Platform.OS !== 'web') {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
 }
 
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -62,6 +66,11 @@ function RiderSession({ children }) {
   return <DeliveryProvider key={rider?._id || rider?.id || 'guest'}>{children}</DeliveryProvider>;
 }
 export default function App() {
+  const [isAppReady, setAppReady] = React.useState(false);
+  const [imageLoaded, setImageLoaded] = React.useState(false);
+  const [layoutDone, setLayoutDone] = React.useState(false);
+  const timerRef = React.useRef(null);
+
   React.useEffect(() => {
     const unsubscribe = initNotificationListeners();
     return () => {
@@ -70,6 +79,43 @@ export default function App() {
       }
     };
   }, []);
+
+  // When image and layout are ready, hide native splash immediately (native only) and keep custom artwork for 1500 ms
+  React.useEffect(() => {
+    if (imageLoaded && layoutDone) {
+      if (Platform.OS !== 'web') {
+        SplashScreen.hideAsync().catch(() => {});
+      }
+      timerRef.current = setTimeout(() => {
+        setAppReady(true);
+      }, 1500);
+    }
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [imageLoaded, layoutDone]);
+
+  if (!isAppReady) {
+    return (
+      <View style={styles.splashContainer} onLayout={() => setLayoutDone(true)}>
+        <Image
+          source={require('./assets/delivery-splash.png')}
+          style={styles.splashImage}
+          resizeMode="contain"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            // If image fails, hide native splash (native only) and proceed to app
+            if (Platform.OS !== 'web') {
+              SplashScreen.hideAsync().catch(() => {});
+            }
+            setAppReady(true);
+          }}
+        />
+      </View>
+    );
+  }
 
   return (
     <ErrorBoundary>
@@ -123,6 +169,16 @@ const styles = StyleSheet.create({
   reloadText: {
     color: '#ffffff',
     fontWeight: '700',
-    fontSize: 14
-  }
+    fontSize: 14,
+  },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashImage: {
+    width: '100%',
+    height: '100%',
+  },
 });

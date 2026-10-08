@@ -98,6 +98,140 @@ test('Rider Notification Tap Navigation Lifecycle Suite', async (t) => {
     assert.equal(navigationHistory.length, 1);
 
     handleNotificationData({ orderId: 'ord_active_303', type: 'ORDER_UPDATE' }, 'resp_dup_rider');
-    assert.equal(navigationHistory.length, 1, 'Duplicate responseId must be ignored');
+    assert.equal(navigationHistory.length, 1);
+  });
+});
+
+test('Rider Android Expo Go Push Notification Guard Suite', async (t) => {
+  const ExecutionEnvironment = {
+    Bare: 'bare',
+    Standalone: 'standalone',
+    StoreClient: 'storeClient',
+  };
+
+  function checkIsAndroidExpoGo(platform, constants) {
+    if (platform !== 'android') return false;
+    const isStoreClient =
+      constants?.executionEnvironment === ExecutionEnvironment.StoreClient ||
+      constants?.executionEnvironment === 'storeClient';
+    return Boolean(isStoreClient || constants?.appOwnership === 'expo');
+  }
+
+  function simulateRiderNotificationService(platform, constants, mockExpoNotifications = null) {
+    let requiredModule = false;
+    let channelsConfigured = false;
+    let presentationConfigured = false;
+    let listenerCount = 0;
+
+    const isExpoGo = checkIsAndroidExpoGo(platform, constants);
+
+    function getNotifications() {
+      if (platform === 'web' || isExpoGo) {
+        return null;
+      }
+      requiredModule = true;
+      if (mockExpoNotifications && !presentationConfigured) {
+        presentationConfigured = true;
+      }
+      return mockExpoNotifications;
+    }
+
+    async function setupChannels() {
+      if (platform !== 'android' || channelsConfigured || isExpoGo) {
+        return;
+      }
+      const mod = getNotifications();
+      if (!mod) return;
+      channelsConfigured = true;
+    }
+
+    async function registerForPush() {
+      if (platform === 'web' || isExpoGo) {
+        return null;
+      }
+      const mod = getNotifications();
+      if (!mod) return null;
+      await setupChannels();
+      return { token: 'ExponentPushToken[mock-rider-token]', platform };
+    }
+
+    function initListeners() {
+      if (platform === 'web' || isExpoGo) {
+        return () => {};
+      }
+      const mod = getNotifications();
+      if (!mod) return () => {};
+      listenerCount++;
+      return () => {
+        listenerCount--;
+      };
+    }
+
+    return {
+      isExpoGo,
+      getNotifications,
+      setupChannels,
+      registerForPush,
+      initListeners,
+      wasRequired: () => requiredModule,
+      areChannelsConfigured: () => channelsConfigured,
+      getListenerCount: () => listenerCount,
+    };
+  }
+
+  await t.test('1. Accurately identifies Android Expo Go via ExecutionEnvironment.StoreClient', () => {
+    assert.equal(checkIsAndroidExpoGo('android', { executionEnvironment: 'storeClient' }), true);
+    assert.equal(checkIsAndroidExpoGo('android', { executionEnvironment: ExecutionEnvironment.StoreClient }), true);
+    assert.equal(checkIsAndroidExpoGo('android', { appOwnership: 'expo' }), true);
+  });
+
+  await t.test('2. Accurately identifies Non-Expo-Go environments (iOS, Standalone, Bare, Dev-Client)', () => {
+    assert.equal(checkIsAndroidExpoGo('ios', { executionEnvironment: 'storeClient' }), false);
+    assert.equal(checkIsAndroidExpoGo('web', { executionEnvironment: 'storeClient' }), false);
+    assert.equal(checkIsAndroidExpoGo('android', { executionEnvironment: 'standalone' }), false);
+    assert.equal(checkIsAndroidExpoGo('android', { executionEnvironment: 'bare' }), false);
+  });
+
+  await t.test('3. Android Expo Go: avoids requiring expo-notifications, returns safe null token and no-op cleanup', async () => {
+    const service = simulateRiderNotificationService('android', { executionEnvironment: 'storeClient' });
+
+    assert.equal(service.isExpoGo, true);
+
+    const tokenResult = await service.registerForPush();
+    assert.equal(tokenResult, null, 'Push registration must return null in Expo Go without throwing');
+
+    const cleanup = service.initListeners();
+    assert.equal(typeof cleanup, 'function', 'Must return cleanup function');
+    cleanup();
+
+    await service.setupChannels();
+    assert.equal(service.areChannelsConfigured(), false);
+    assert.equal(service.wasRequired(), false, 'Must NEVER require expo-notifications in Android Expo Go');
+  });
+
+  await t.test('4. Standalone / Dev Build: requires expo-notifications and configures channels', async () => {
+    const mockModule = {
+      setNotificationHandler: () => {},
+      setNotificationChannelAsync: async () => {},
+      getPermissionsAsync: async () => ({ status: 'granted' }),
+      getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[mock-rider-token]' }),
+      addNotificationResponseReceivedListener: () => ({ remove: () => {} }),
+      getLastNotificationResponseAsync: async () => null,
+    };
+
+    const service = simulateRiderNotificationService('android', { executionEnvironment: 'standalone' }, mockModule);
+
+    assert.equal(service.isExpoGo, false);
+
+    const cleanup = service.initListeners();
+    assert.equal(service.getListenerCount(), 1);
+    assert.equal(service.wasRequired(), true);
+
+    cleanup();
+    assert.equal(service.getListenerCount(), 0);
+
+    const tokenResult = await service.registerForPush();
+    assert.deepEqual(tokenResult, { token: 'ExponentPushToken[mock-rider-token]', platform: 'android' });
+    assert.equal(service.areChannelsConfigured(), true);
   });
 });

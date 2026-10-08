@@ -106,7 +106,7 @@ export const GlassTabBar = ({ state, descriptors, navigation }) => {
           intensity={65}
           tint="light"
           style={StyleSheet.absoluteFill}
-          {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' } : {})}
+          {...(Platform.OS === 'android' ? { blurMethod: 'none' } : {})}
         />
 
         {/* Top Water Sheen Line */}
@@ -180,9 +180,9 @@ const styles = StyleSheet.create({
     elevation: 8,
     ...(Platform.OS === 'web'
       ? {
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)'
-        }
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)'
+      }
       : {})
   },
   topSheen: {

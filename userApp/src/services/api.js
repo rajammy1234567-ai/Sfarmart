@@ -395,10 +395,39 @@ export const apiService = {
 
   getVendorProducts: async (vendorId, params = {}) => {
     try {
-      const response = await apiClient.get(`/vendors/${vendorId}/products`, { params });
+      const response = await apiClient.get(
+  `/vendors/${vendorId}/products`,
+  {
+    params: {
+  ...params,
+  _diagnostic: Date.now(),
+},
+  }
+);
+	console.log('[VendorProducts]', {
+  vendorId,
+  baseURL: apiClient.defaults.baseURL,
+  status: response.status,
+  success: response.data?.success,
+  count: response.data?.products?.length,
+});
+console.log(
+  '[VendorProducts body]',
+  JSON.stringify(response.data)?.slice(0, 1500)
+);
+console.log('[VendorProducts headers]', {
+  contentType: response.headers?.['content-type'],
+  contentEncoding: response.headers?.['content-encoding'],
+  dataType: typeof response.data,
+});
       return response.data;
     } catch (error) {
-      console.warn('Failed to fetch vendor products:', error.message);
+      console.warn('[VendorProducts failed]', {
+  vendorId,
+  status: error.response?.status,
+  code: error.code,
+  message: error.message,
+});
       return { success: false, products: [] };
     }
   },

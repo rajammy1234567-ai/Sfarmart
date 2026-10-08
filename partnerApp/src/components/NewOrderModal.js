@@ -187,7 +187,7 @@ export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
             intensity={65}
             tint="light"
             style={StyleSheet.absoluteFill}
-            {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' } : {})}
+            {...(Platform.OS === 'android' ? { blurMethod: 'none' } : {})}
           />
 
           {/* Water Sheen Gradient */}
@@ -233,8 +233,8 @@ export const NewOrderModal = ({ order, onAccept, onReject, onClose }) => {
               {timeLeft > 0
                 ? 'Auto-accepts for preparation in:'
                 : isSubmitting
-                ? 'Auto-accepting for preparation...'
-                : 'Auto-accepted for preparation!'}
+                  ? 'Auto-accepting for preparation...'
+                  : 'Auto-accepted for preparation!'}
             </Text>
             <Animated.Text
               style={[
@@ -377,9 +377,9 @@ const styles = StyleSheet.create({
     elevation: 12,
     ...(Platform.OS === 'web'
       ? {
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)'
-        }
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)'
+      }
       : {})
   },
   modalSheen: {

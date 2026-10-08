@@ -18,6 +18,16 @@
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     },
+    "staging": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://farmart-backend-staging.onrender.com/api"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "android": {

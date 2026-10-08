@@ -102,7 +102,7 @@ export const GlassCard = ({
         intensity={intensity}
         tint={tint === 'dark' ? 'dark' : 'light'}
         style={[StyleSheet.absoluteFill, { borderRadius }]}
-        {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' } : {})}
+        {...(Platform.OS === 'android' ? { blurMethod: 'none' } : {})}
       />
 
       {/* Liquid Water Sheen (Inner Top Highlight) */}

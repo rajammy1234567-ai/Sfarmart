@@ -12,8 +12,10 @@
     "android": {
       "package": "com.sfarmart.deliveryapp",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "backgroundColor": "#0f172a"
+        "foregroundImage": "./assets/delivery-icon.png",
+        "backgroundColor": "#ffffff"
       },
       "permissions": [
         "INTERNET",

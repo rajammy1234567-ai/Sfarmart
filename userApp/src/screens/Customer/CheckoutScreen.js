@@ -284,6 +284,7 @@ export const CheckoutScreen = ({ navigation }) => {
   // Open the consolidated address picker modal
   const openAddressPicker = () => {
     lookupVersionRef.current += 1;
+    setIsLocating(false);
     isPickerOpenRef.current = true;
     setIsLocating(false);
     setIsResolvingAddress(false);
@@ -338,6 +339,7 @@ export const CheckoutScreen = ({ navigation }) => {
 
     lookupVersionRef.current += 1;
     const currentVersion = lookupVersionRef.current;
+    setIsLocating(false);
 
     setSelectedPin(validatedPoint);
     setMapCenter(validatedPoint);
@@ -560,11 +562,6 @@ export const CheckoutScreen = ({ navigation }) => {
   // Payment Gateway Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [selectedUpiApp, setSelectedUpiApp] = useState('gpay');
-  const [upiIdInput, setUpiIdInput] = useState('rajesh@okhdfcbank');
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8921');
-  const [paymentTab, setPaymentTab] = useState('upi'); // 'upi' | 'card' | 'qr'
 
   // Post-Order Confirmation Receipt Modal
   const [confirmedOrder, setConfirmedOrder] = useState(null);
@@ -656,7 +653,6 @@ export const CheckoutScreen = ({ navigation }) => {
 
     if (paymentMethod === 'UPI' || paymentMethod === 'CARD') {
       setShowPaymentModal(true);
-      setPaymentSuccess(false);
       setPaymentSubmitting(false);
     } else {
       // COD or Wallet - process directly
@@ -981,7 +977,29 @@ export const CheckoutScreen = ({ navigation }) => {
           </View>
 
           <View style={styles.paymentOptions}>
-            {[{id:'COD',icon:'cash-outline',title:'Cash on Delivery',sub:'Pay the rider on delivery',tag:null}].map((opt) => (
+            {[
+              {
+                id: 'COD',
+                icon: 'cash-outline',
+                title: 'Cash on Delivery',
+                sub: 'Pay the rider on delivery',
+                tag: null
+              },
+              {
+                id: 'UPI',
+                icon: 'flash-outline',
+                title: 'UPI (GPay, PhonePe, Paytm, QR)',
+                sub: 'Instant & secure via Razorpay',
+                tag: 'RECOMMENDED'
+              },
+              {
+                id: 'CARD',
+                icon: 'card-outline',
+                title: 'Credit / Debit Card',
+                sub: 'Visa, Mastercard, RuPay & more via Razorpay',
+                tag: null
+              }
+            ].map((opt) => (
               <AnimatedPayOption
                 key={opt.id}
                 opt={opt}
@@ -1091,9 +1109,9 @@ export const CheckoutScreen = ({ navigation }) => {
               <View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="shield-checkmark" size={18} color="#16a34a" />
-                  <Text style={styles.paymentModalTitle}>S-farmart Secure Checkout</Text>
+                  <Text style={styles.paymentModalTitle}>Razorpay Secure Checkout</Text>
                 </View>
-                <Text style={styles.paymentModalSub}>256-Bit Bank Grade SSL Encryption</Text>
+                <Text style={styles.paymentModalSub}>100% RBI Authorized & 256-Bit SSL Encrypted</Text>
               </View>
               <TouchableOpacity
                 onPress={() => !paymentSubmitting && setShowPaymentModal(false)}
@@ -1113,153 +1131,64 @@ export const CheckoutScreen = ({ navigation }) => {
             {paymentSubmitting ? (
               <View style={styles.processingBox}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.processingTitle}>Securing Connection with Bank / UPI...</Text>
+                <Text style={styles.processingTitle}>Connecting to Razorpay...</Text>
                 <Text style={styles.processingSub}>Please do not press back or close the app</Text>
-              </View>
-            ) : paymentSuccess ? (
-              <View style={styles.successBox}>
-                <View style={styles.successTickCircle}>
-                  <Ionicons name="checkmark" size={42} color="#ffffff" />
-                </View>
-                <Text style={styles.successTitle}>Payment of ₹{grandTotal} Received!</Text>
-                <Text style={styles.successSub}>
-                  Payment processed securely
-                </Text>
               </View>
             ) : (
               <>
-                {/* Gateway Tabs */}
-                <View style={styles.gatewayTabs}>
-                  <TouchableOpacity
-                    style={[styles.gatewayTab, paymentTab === 'upi' && styles.gatewayTabActive]}
-                    onPress={() => setPaymentTab('upi')}
-                  >
-                    <Text
-                      style={[
-                        styles.gatewayTabText,
-                        paymentTab === 'upi' && styles.gatewayTabTextActive
-                      ]}
-                    >
-                      UPI Apps & ID
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.gatewayTab, paymentTab === 'qr' && styles.gatewayTabActive]}
-                    onPress={() => setPaymentTab('qr')}
-                  >
-                    <Text
-                      style={[
-                        styles.gatewayTabText,
-                        paymentTab === 'qr' && styles.gatewayTabTextActive
-                      ]}
-                    >
-                      Scan QR Code
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.gatewayTab, paymentTab === 'card' && styles.gatewayTabActive]}
-                    onPress={() => setPaymentTab('card')}
-                  >
-                    <Text
-                      style={[
-                        styles.gatewayTabText,
-                        paymentTab === 'card' && styles.gatewayTabTextActive
-                      ]}
-                    >
-                      Debit/Credit Card
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Tab: UPI Apps */}
-                {paymentTab === 'upi' && (
-                  <View style={styles.tabContent}>
-                    <Text style={styles.tabLabel}>Choose Instant UPI App:</Text>
-                    <View style={styles.upiAppsRow}>
-                      {[
-                        { id: 'gpay', name: 'Google Pay', icon: 'logo-google' },
-                        { id: 'phonepe', name: 'PhonePe', icon: 'flash' },
-                        { id: 'paytm', name: 'Paytm', icon: 'wallet' },
-                        { id: 'bhim', name: 'BHIM UPI', icon: 'finger-print' }
-                      ].map((app) => (
-                        <TouchableOpacity
-                          key={app.id}
-                          style={[
-                            styles.upiAppBtn,
-                            selectedUpiApp === app.id && styles.upiAppBtnSelected
-                          ]}
-                          onPress={() => setSelectedUpiApp(app.id)}
-                        >
-                          <Ionicons
-                            name={app.icon}
-                            size={20}
-                            color={selectedUpiApp === app.id ? colors.primary : '#475569'}
-                          />
-                          <Text
-                            style={[
-                              styles.upiAppBtnText,
-                              selectedUpiApp === app.id && styles.upiAppBtnTextSelected
-                            ]}
-                          >
-                            {app.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <Text style={[styles.tabLabel, { marginTop: 14 }]}>Or Enter Any UPI ID:</Text>
-                    <View style={styles.upiInputRow}>
-                      <TextInput
-                        style={styles.upiInput}
-                        value={upiIdInput}
-                        onChangeText={setUpiIdInput}
-                        placeholder="yourname@okhdfcbank"
-                      />
-                      <View style={styles.verifiedUpiBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#16a34a" />
-                        <Text style={styles.verifiedUpiText}>Verified</Text>
-                      </View>
-                    </View>
-                  </View>
-                )}
-
-                {/* Tab: QR Code */}
-                {paymentTab === 'qr' && (
-                  <View style={styles.qrTabContent}>
-                    <View style={styles.qrBox}>
-                      <Ionicons name="qr-code-outline" size={130} color="#0f172a" />
-                    </View>
-                    <Text style={styles.qrScanText}>Scan with any UPI App to Pay ₹{grandTotal}</Text>
-                    <Text style={styles.qrSub}>Compatible with Google Pay, PhonePe, Paytm, CRED</Text>
-                  </View>
-                )}
-
-                {/* Tab: Cards */}
-                {paymentTab === 'card' && (
-                  <View style={styles.tabContent}>
-                    <Text style={styles.tabLabel}>Card Number:</Text>
-                    <TextInput
-                      style={styles.cardInput}
-                      value={cardNumber}
-                      onChangeText={setCardNumber}
-                    />
-                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.tabLabel}>Valid Thru:</Text>
-                        <TextInput style={styles.cardInput} value="08/29" editable={false} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.tabLabel}>CVV:</Text>
-                        <TextInput
-                          style={styles.cardInput}
-                          value="•••"
-                          secureTextEntry
-                          editable={false}
+                <View style={styles.tabContent}>
+                  <View style={{
+                    backgroundColor: '#f8fafc',
+                    padding: 14,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: '#e2e8f0',
+                    gap: 10
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: '#dcfce7',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Ionicons
+                          name={paymentMethod === 'UPI' ? 'flash' : 'card'}
+                          size={22}
+                          color={colors.primary}
                         />
                       </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>
+                          {paymentMethod === 'UPI' ? 'UPI (Google Pay, PhonePe, Paytm, QR)' : 'Credit / Debit Card'}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                          {paymentMethod === 'UPI'
+                            ? 'Instant payment via any UPI app or dynamic QR'
+                            : 'Visa, Mastercard, RuPay, Maestro & more'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: '#f0fdf4',
+                      padding: 10,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#bbf7d0'
+                    }}>
+                      <Ionicons name="shield-checkmark" size={16} color="#15803d" />
+                      <Text style={{ fontSize: 11.5, color: '#15803d', fontWeight: '600', flex: 1 }}>
+                        Payment entry is handled directly on Razorpay's secure checkout. No card numbers, CVVs, or UPI PINs are collected here.
+                      </Text>
                     </View>
                   </View>
-                )}
+                </View>
 
                 {/* Pay Action Button */}
                 <TouchableOpacity
@@ -1268,7 +1197,9 @@ export const CheckoutScreen = ({ navigation }) => {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="lock-closed" size={18} color="#ffffff" />
-                  <Text style={styles.gatewaySubmitText}>Pay ₹{grandTotal} Securely</Text>
+                  <Text style={styles.gatewaySubmitText}>
+                    Proceed to Razorpay (₹{grandTotal})
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
