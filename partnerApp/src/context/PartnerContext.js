@@ -1,3 +1,4 @@
+import { requestPartnerLogin, loginErrorMessage } from '../services/partnerLogin';
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 import { fetchJsonResponse as fetch, collectPages, createSingleFlight, startPolling } from '../services/requestPolicy';
@@ -241,13 +242,7 @@ export const PartnerProvider = ({ children }) => {
     if (isClearingSessionRef.current) return { success: false, message: 'Sign-out is finishing. Please wait.' };
     const loginEpoch = ++authEpochRef.current;
     try {
-      setIsLoading(true);
-      const res = await fetch(`${API_BASE_URL}/auth/vendor/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password })
-      });
-      const data = await res.json();
+      const data = await requestPartnerLogin(API_BASE_URL, phone, password, fetch);
       if (authEpochRef.current !== loginEpoch) return { success: false, message: 'Session changed while signing in.' };
       if (data.success && data.vendor && data.token) {
         stockUpdatesRef.current.clear();
@@ -270,10 +265,8 @@ export const PartnerProvider = ({ children }) => {
       }
       return { success: false, message: data.message || 'Login failed' };
     } catch (err) {
-      console.warn('Vendor login failed:', err);
-      return { success: false, message: 'Network connection failed' };
-    } finally {
-      if (authEpochRef.current === loginEpoch) setIsLoading(false);
+      console.warn('[Partner login]', err?.code || 'LOGIN_FAILED');
+      return { success: false, message: loginErrorMessage(err) };
     }
   }, [fetchInventory, fetchOrders, fetchStats, syncPushToken]);
 

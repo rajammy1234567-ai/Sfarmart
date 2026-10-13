@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,12 +34,14 @@ export const PartnerLoginScreen = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const loginPending = useRef(false);
 
   const handleLogin = async (overridePhone, overridePassword) => {
+    if (loginPending.current) return;
     const targetPhone = (overridePhone || phone).trim();
     const targetPass = overridePassword || password;
 
-    if (!targetPhone) {
+    if (!/^\d{10}$/.test(targetPhone)) {
       setErrorMessage('Please enter your 10-digit registered phone number');
       return;
     }
@@ -49,6 +51,7 @@ export const PartnerLoginScreen = () => {
       return;
     }
 
+    loginPending.current = true;
     setIsLoading(true);
     setErrorMessage('');
 
@@ -60,6 +63,7 @@ export const PartnerLoginScreen = () => {
     } catch (err) {
       setErrorMessage('Network connection error. Please try again.');
     } finally {
+      loginPending.current = false;
       setIsLoading(false);
     }
   };
@@ -98,11 +102,11 @@ export const PartnerLoginScreen = () => {
         <GlassCard style={styles.card} showSheen={true}>
           <Text style={styles.cardTitle}>Partner Login</Text>
           <Text style={styles.cardSub}>
-            Enter credentials or tap a test merchant account below
+            Sign in with your registered partner phone number and password.
           </Text>
 
           {errorMessage ? (
-            <View style={styles.errorBanner}>
+            <View style={styles.errorBanner} accessibilityRole="alert" accessibilityLiveRegion="polite">
               <Ionicons name="alert-circle" size={18} color="#dc2626" />
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
@@ -141,6 +145,8 @@ export const PartnerLoginScreen = () => {
                 placeholderTextColor={colors.textMuted}
                 value={password}
                 onChangeText={setPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
                 secureTextEntry={!showPassword}
               />
               <TouchableOpacity
@@ -162,6 +168,9 @@ export const PartnerLoginScreen = () => {
             style={styles.submitBtn}
             onPress={() => handleLogin()}
             disabled={isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Log in to store console"
+            accessibilityState={{ disabled: isLoading, busy: isLoading }}
             activeOpacity={0.8}
           >
             {isLoading ? (
@@ -173,6 +182,12 @@ export const PartnerLoginScreen = () => {
               </>
             )}
           </TouchableOpacity>
+
+          {isLoading && (
+            <Text accessibilityLiveRegion="polite" style={styles.cardSub}>
+              Signing in. The server may take up to a minute to respond.
+            </Text>
+          )}
 
           {/* Security Notice */}
           <View style={styles.securityBox}>

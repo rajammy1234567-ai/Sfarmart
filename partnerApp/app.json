@@ -4,18 +4,19 @@
     "slug": "sfarmart-partner",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/sfarmart24_logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sfarmart.partner"
     },
     "android": {
+	"googleServicesFile": "./google-services.json",
       "package": "com.sfarmart.partner",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#15803d"
+        "foregroundImage": "./assets/sfarmart24_logo.png",
+	"backgroundColor": "#ffffff"
       },
       "permissions": [
         "VIBRATE",

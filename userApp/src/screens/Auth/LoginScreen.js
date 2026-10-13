@@ -40,19 +40,22 @@ export const LoginScreen = ({ navigation }) => {
     }
   };
 
+  const loginPending = useRef(false);
   const handleLogin = async () => {
+    if (loginPending.current) return;
     const cleanPhone = phone ? phone.trim() : "";
-    const cleanPass = password ? password.trim() : "";
+    const cleanPass = password || "";
 
-    if (!cleanPhone || !cleanPass) {
-      showAlert("Error", "Please enter phone number and password.");
+    if (!/^\d{10}$/.test(cleanPhone) || !cleanPass) {
+      showAlert("Error", "Please enter your 10-digit phone number and password.");
       return;
     }
 
+    loginPending.current = true;
     setLoading(true);
     try {
       const user = await loginUser(cleanPhone, cleanPass);
-      setLoading(false);
+
       if (user) {
         navigateAfterLogin();
       } else {
@@ -62,11 +65,14 @@ export const LoginScreen = ({ navigation }) => {
         );
       }
     } catch (error) {
-      setLoading(false);
+
       showAlert(
         "Login Failed",
         error?.message || "Could not log in. Please check your credentials."
       );
+    } finally {
+      loginPending.current = false;
+      setLoading(false);
     }
   };
 

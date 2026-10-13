@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1079925320759",
+    "project_id": "sfarmart-production",
+    "storage_bucket": "sfarmart-production.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1079925320759:android:a810b71b7a6887948163b2",
+        "android_client_info": {
+          "package_name": "com.sfarmart.partner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCCBWjA5Dswriad6XY07McWkzFS06CX-aU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1079925320759:android:9aa1ba7f0242606a8163b2",
+        "android_client_info": {
+          "package_name": "com.sfarmart.userapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCCBWjA5Dswriad6XY07McWkzFS06CX-aU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

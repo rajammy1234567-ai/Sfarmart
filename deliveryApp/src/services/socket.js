@@ -8,12 +8,20 @@ let ioModule = null;
 
 // Dynamically import socket.io-client to prevent web bundler crashes if resolving
 const getIO = () => {
-  if (ioModule) return ioModule;
+  if (typeof ioModule === 'function') return ioModule;
+
   try {
-    ioModule = require('socket.io-client');
-    return ioModule.default || ioModule;
+    const loaded = require('socket.io-client');
+    const factory = loaded.io || loaded.default || loaded;
+
+    if (typeof factory !== 'function') {
+      throw new Error('Socket.IO client factory is unavailable');
+    }
+
+    ioModule = factory;
+    return ioModule;
   } catch (e) {
-    console.warn('[delivery:socket] socket.io-client not loaded yet:', e.message);
+    console.warn('[delivery:socket] Client load failed:', e.message);
     return null;
   }
 };
@@ -71,9 +79,10 @@ const openSocket = async (epoch) => {
     console.warn('[delivery:socket] No auth token found, skipping socket connection');
     return null;
   }
+console.log('[delivery:socket] Starting connection:', url);
 
   socket = io(url, {
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
     // Dynamically retrieve the latest token from storage on every handshake/reconnect
     auth: async (callback) => {
       try {
@@ -95,6 +104,7 @@ const openSocket = async (epoch) => {
   const activeSocket = socket;
   let serverKicks = 0;
   socket.on('connect', () => {
+console.log('[delivery:socket] Active transport:', activeSocket.io.engine?.transport?.name);
     console.log(`⚡ [delivery:socket] Connected to ${url} (socket: ${socket.id})`);
   });
 

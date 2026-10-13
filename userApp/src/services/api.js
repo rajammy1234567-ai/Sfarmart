@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { requestCustomerLogin } from './customerLogin';
 import { API_BASE_URL } from '../config/env';
 import storage from './storage';
 import { collectPages, createSingleFlight, withReadRetry, isDefinitiveAuthFailure } from './requestPolicy';
@@ -306,13 +307,7 @@ export const apiService = {
   customerLogin: async (phone, password) => {
     try {
       const deviceId = await storage.getDeviceId();
-      let response;
-      try {
-        response = await apiClient.post('/auth/customer/login', { phone, password, deviceId });
-      } catch (postErr) {
-        // Fallback to /login route on same API
-        response = await apiClient.post('/login', { phone, password, deviceId });
-      }
+      const response = await requestCustomerLogin(apiClient, phone, password, deviceId);
       const data = response?.data;
       if (data && (data.success || data.ok)) {
         initializeSession();

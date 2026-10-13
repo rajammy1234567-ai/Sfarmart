@@ -1,0 +1,85 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+.expo/
+**/.expo/
+scratch/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary artifacts
+backend-deps-worktree/
+authController_commit.js
+diff_server.txt
+full_server_diff.txt
+server_diff_full.txt
+user_diff.txt
+"Untitled document (1).docx"
+.tempmediaStorage/
+
+# Signing, certificates, and private credentials
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.cert
+*.crt
+*.p8
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+*service-account*.json
+**/*service-account*.json
+*serviceAccount*.json
+**/*serviceAccount*.json
+
+# Backups and temporary test generators
+*.backup-*
+**/*.backup-*
+*.backup
+**/*.backup
+server/tests/gen_gps_test.cjsnode_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# macOS
+.DS_Store
+
+!google-services.json
+!deliveryApp/google-services.json

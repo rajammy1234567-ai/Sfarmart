@@ -67,3 +67,8 @@ GoogleService-Info.plist
 *.backup
 **/*.backup
 server/tests/gen_gps_test.cjs
+# Generated mobile exports and temporary editor files
+/deliveryApp/android-bundle/
+/userApp/temp_export_test/
+/partnerApp/src/navigation/Untitled-1.txt
+**/*firebase-adminsdk*.json

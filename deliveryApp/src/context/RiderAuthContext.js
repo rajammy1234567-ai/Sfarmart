@@ -66,7 +66,9 @@ export const RiderAuthProvider = ({ children }) => {
           setNotificationAuthReady(true);
           syncPushToken();
           // Connect socket in background
-          connectSocket();
+          connectSocket().catch((error) => {
+  console.error('[RiderAuth socket initialization]', error?.stack || error);
+});
 
           // Refresh fresh profile from server in background
           riderApi
@@ -113,24 +115,44 @@ export const RiderAuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    if (teardownRef.current) return;
-    teardownRef.current = true;
-    authEpochRef.current += 1;
+  if (teardownRef.current) return;
+  teardownRef.current = true;
+  authEpochRef.current += 1;
+  let step = 'suspend session';
+
+  try {
     suspendRiderSession();
+
+    step = 'notification auth';
     setNotificationAuthReady(false);
+
+    step = 'server cleanup';
     try {
       await cleanupPushToken();
       await riderApi.logout();
-    } catch {
-      // Ignore network errors on logout
+    } catch (error) {
+      console.warn('[Logout server cleanup]', error?.message);
     }
-    await stopBackgroundLocation().catch(()=>{});
+
+    step = 'stop location';
+    await stopBackgroundLocation();
+
+    step = 'clear stored auth';
     await storage.clearAuth();
+
+    step = 'finish session';
     finishRiderSession();
+
+    step = 'disconnect socket';
     disconnectSocket();
     setRider(null);
+    console.log('[Logout] Complete');
+  } catch (error) {
+    console.error('[Logout failed at]', step, error?.stack || error);
+  } finally {
     teardownRef.current = false;
-  };
+  }
+};
 
   const toggleDutyStatus = async () => {
     if (!rider) return;

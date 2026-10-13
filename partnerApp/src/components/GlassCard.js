@@ -99,6 +99,7 @@ export const GlassCard = ({
     >
       {/* Native Blur Layer if available */}
       <BlurView
+        pointerEvents="none"
         intensity={intensity}
         tint={tint === 'dark' ? 'dark' : 'light'}
         style={[StyleSheet.absoluteFill, { borderRadius }]}

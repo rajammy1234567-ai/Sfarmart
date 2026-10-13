@@ -4,17 +4,15 @@
     "slug": "userApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/sfarmart24_logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/sfarmart24_logo.png",
+        "backgroundColor": "#ffffff"
       },
       "package": "com.sfarmart.userapp",
       "permissions": [
@@ -24,7 +22,8 @@
         "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS"
       ],
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       [
@@ -32,6 +31,19 @@
         {
           "icon": "./assets/icon.png",
           "color": "#16a34a"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/sfarmart24_logo.png",
+          "backgroundColor": "#ffffff",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "image": "./assets/sfarmart24_logo.png",
+            "backgroundColor": "#ffffff"
+          }
         }
       ]
     ],

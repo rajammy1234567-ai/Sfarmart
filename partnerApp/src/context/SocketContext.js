@@ -51,7 +51,7 @@ export const SocketProvider = ({ children, vendor, token, onOrderReceived }) => 
             cb({ token });
           }
         },
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'],
         reconnectionAttempts: 20,
         reconnectionDelay: 2000,
         reconnectionDelayMax: 30000,

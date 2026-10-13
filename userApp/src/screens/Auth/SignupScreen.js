@@ -1,3 +1,4 @@
+import { fetchJsonResponse } from '../../services/requestPolicy';
 import React, { useState, useRef } from "react";
 import {
   View,
@@ -42,43 +43,46 @@ export const SignupScreen = ({ navigation }) => {
     navigation.replace("MainTabs");
   };
 
+  const signupPending = useRef(false);
   const handleSignup = async () => {
-    if (!name || !phone || !password) {
-      showAlert("Error", "Name, Phone, and Password are required.");
+    if (signupPending.current) return;
+    if (!name.trim() || !/^\d{10}$/.test(phone.trim()) || !password) {
+      showAlert("Error", "Name, a 10-digit phone number, and password are required.");
       return;
     }
 
+    signupPending.current = true;
     setLoading(true);
     try {
-      const response = await fetch(
+      const response = await fetchJsonResponse(
         `${API_BASE_URL}/register`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Accept: "application/json", "Accept-Encoding": "identity" },
           body: JSON.stringify({
-            name,
-            phone,
+            name: name.trim(),
+            phone: phone.trim(),
             city: city || 'Ludhiana',
             password,
             role: selectedRole,
           }),
         },
+        { timeoutMs: 60000 },
       );
       const data = await response.json();
       setLoading(false);
 
-      if (data.success || data.ok) {
+      if (response.ok && (data.success || data.ok)) {
         if (data.accessToken || data.token) {
           const tok = data.accessToken || data.token;
           await storage.setAccessToken(tok);
           setAuthToken(tok);
           if (data.refreshToken) await storage.setRefreshToken(data.refreshToken);
         }
-        if (data.user) {
-          await loginUser(data.user);
-        } else {
-          await loginUser(phone, password);
-        }
+        const signedInUser = data.user
+          ? await loginUser(data.user)
+          : await loginUser(phone.trim(), password);
+        if (!signedInUser) throw new Error('Account created. Please sign in from the Log In tab.');
         if (navigation && typeof navigation.navigate === 'function') {
           navigation.navigate("MainTabs");
         } else if (navigation && typeof navigation.canGoBack === 'function' && navigation.canGoBack()) {
@@ -86,12 +90,12 @@ export const SignupScreen = ({ navigation }) => {
         }
         showAlert(
           "Welcome to Farmart! 🎉",
-          `Hi ${name}, your account is active with ₹250 wallet balance!`
+          `Hi ${name.trim()}, your account has been created.`
         );
       } else {
         showAlert(
-          "Already Registered",
-          data.message || "This mobile number is already registered. Please switch to the Log In tab."
+          "Registration Failed",
+          data.message || "Could not create your account. Please try again."
         );
       }
     } catch (error) {
@@ -101,6 +105,9 @@ export const SignupScreen = ({ navigation }) => {
         "Registration Error",
         error.message || "Could not complete registration. Please try again."
       );
+    } finally {
+      signupPending.current = false;
+      setLoading(false);
     }
   };
 

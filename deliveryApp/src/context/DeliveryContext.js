@@ -27,19 +27,7 @@ export const DeliveryProvider = ({ children }) => {
   const [locationError,setLocationError]=useState('');
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
-useEffect(() => {
-  (async () => {
-    try {
-      const token = await storage.getToken();
-      const refresh = await storage.getRefreshToken?.();
-      if (!token || !refresh) {
-        await logout();
-      }
-    } catch (e) {
-      console.warn('[DeliveryContext] Token guard error:', e.message);
-    }
-  })();
-}, []);
+
   // Fetch active order and earnings
   const refreshActiveOrder = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -149,6 +137,8 @@ useEffect(() => {
         socket.off('order:status_updated', handleStatus);
         socket.off('order:status', handleStatus);
       };
+        }).catch((error) => {
+      console.error('[DeliveryContext socket initialization]', error?.stack || error);
     });
 
     return () => {

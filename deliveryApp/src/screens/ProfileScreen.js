@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRiderAuth } from '../context/RiderAuthContext';
 
 export const ProfileScreen = () => {
-  const { rider, logoutRider } = useRiderAuth();
+  const { rider, logout: logoutRider } = useRiderAuth();
 
   const handleLogout = () => {
     Alert.alert(

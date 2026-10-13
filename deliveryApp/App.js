@@ -8,6 +8,7 @@ import { DeliveryProvider } from './src/context/DeliveryContext';
 import { DeliveryNavigator } from './src/navigation/DeliveryNavigator';
 import { setNavigationRef, initNotificationListeners } from './src/services/notificationService';
 
+
 // Prevent unhandled promise rejections or native errors from crashing the mobile process
 if (typeof global !== 'undefined' && global.ErrorUtils) {
   try {
