@@ -1,4 +1,4 @@
-import { requestPartnerLogin, loginErrorMessage } from '../services/partnerLogin';
+import { requestPartnerLogin, requestPartnerRegister, loginErrorMessage } from '../services/partnerLogin';
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 import { fetchJsonResponse as fetch, collectPages, createSingleFlight, startPolling } from '../services/requestPolicy';
@@ -270,6 +270,17 @@ export const PartnerProvider = ({ children }) => {
     }
   }, [fetchInventory, fetchOrders, fetchStats, syncPushToken]);
 
+  // Partner Registration (Phone, Password, Shop details, Coordinates)
+  const registerVendor = useCallback(async (registrationData) => {
+    try {
+      const data = await requestPartnerRegister(API_BASE_URL, registrationData, fetch);
+      return data;
+    } catch (err) {
+      console.warn('[Partner register]', err?.code || 'REGISTER_FAILED');
+      return { success: false, message: loginErrorMessage(err) };
+    }
+  }, []);
+
   // Initial load: Restore persistent session from device storage
   useEffect(() => {
     let isMounted = true;
@@ -482,6 +493,60 @@ export const PartnerProvider = ({ children }) => {
     }
   };
 
+  // Upload product image to durable storage
+  const uploadProductImage = async (fileInput) => {
+    if (!token) return { success: false, message: 'Not authenticated' };
+    try {
+      const formData = new FormData();
+
+      if (typeof window !== 'undefined' && (fileInput instanceof Blob || (typeof File !== 'undefined' && fileInput instanceof File))) {
+        formData.append('image', fileInput, fileInput.name || 'product.jpg');
+      } else if (typeof fileInput === 'object' && fileInput.uri) {
+        if (typeof window !== 'undefined' && (fileInput.uri.startsWith('blob:') || fileInput.uri.startsWith('data:'))) {
+          const fetched = await window.fetch(fileInput.uri);
+          const blob = await fetched.blob();
+          formData.append('image', blob, fileInput.fileName || fileInput.name || 'product.jpg');
+        } else {
+          // React Native native file descriptor
+          formData.append('image', {
+            uri: fileInput.uri,
+            name: fileInput.fileName || fileInput.name || 'photo.jpg',
+            type: fileInput.mimeType || fileInput.type || 'image/jpeg'
+          });
+        }
+      } else {
+        return { success: false, message: 'Invalid image input format.' };
+      }
+
+      const res = await fetch(`${API_BASE_URL}/uploads/product-image`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (res.status === 401) {
+        await handleSessionExpired('Image upload returned 401');
+        return { success: false, message: 'Session expired' };
+      }
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          url: data.url,
+          path: data.path,
+          fileId: data.fileId
+        };
+      }
+      return { success: false, code: data.code, message: data.message || 'Image upload failed' };
+    } catch (err) {
+      console.warn('Failed to upload image:', err);
+      return { success: false, message: err.message || 'Network error during image upload' };
+    }
+  };
+
   // Add Product permanently to MongoDB
   const addInventoryItem = async (item) => {
     if (!token) return { success: false, message: 'Not authenticated' };
@@ -499,7 +564,7 @@ export const PartnerProvider = ({ children }) => {
           vendor: vendor?._id,
           price: Number(item.price),
           mrp: Number(item.mrp || item.price),
-          unit: item.unit || '1 pc',
+          unit: typeof item.unit === 'string' ? item.unit.trim() : (item.unit ? String(item.unit).trim() : ''),
           stockQty: Number(item.stock ?? 25),
           description: item.description || '',
           image: item.image || 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80',
@@ -538,7 +603,7 @@ export const PartnerProvider = ({ children }) => {
           subCategory: item.subCategory !== undefined ? item.subCategory : '',
           price: Number(item.price),
           mrp: Number(item.mrp || item.price),
-          unit: item.unit || '1 pc',
+          unit: typeof item.unit === 'string' ? item.unit.trim() : (item.unit ? String(item.unit).trim() : ''),
           stockQty: Number(item.stock || item.stockQty || 25),
           description: item.description || '',
           image: item.image,
@@ -724,12 +789,14 @@ export const PartnerProvider = ({ children }) => {
         token,
         isAuthenticated: Boolean(vendor && token),
         loginVendor,
+        registerVendor,
         toggleStoreStatus,
         orders,
         fetchOrders,
         updateOrderStatus,
         inventory,
         fetchInventory,
+        uploadProductImage,
         addInventoryItem,
         updateInventoryItem,
         toggleItemAvailability,

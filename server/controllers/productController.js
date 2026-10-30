@@ -4,6 +4,53 @@ import Product from '../models/Product.js';
 import Category from '../models/Category.js';
 import Vendor from '../models/Vendor.js';
 import { notifyProductStock } from '../services/notify.js';
+import { confirmProductImage } from '../services/imageStorageService.js';
+
+// Helper to strictly parse numeric inputs; rejects null, booleans, empty/whitespace strings, arrays, objects
+export const parseNumericField = (val) => {
+  if (val === null || typeof val === 'boolean' || Array.isArray(val) || typeof val === 'object') {
+    return null;
+  }
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : null;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+};
+
+// Helper to convert uploaded product image URLs to portable relative paths for database persistence
+export const toPortableImagePath = (imageUrl) => {
+  if (!imageUrl || typeof imageUrl !== 'string') return imageUrl;
+  const match = imageUrl.match(/\/api\/uploads\/product-images\/[a-f0-9]+/i);
+  if (match) {
+    return match[0];
+  }
+  return imageUrl;
+};
+
+// Normalizes product image to fully qualified URL for mobile/web clients
+export const formatProductResponse = (product, req) => {
+  if (!product) return product;
+  const obj = product.toObject ? product.toObject() : { ...product };
+  if (obj.image && typeof obj.image === 'string') {
+    const uploadMatch = obj.image.match(/\/api\/uploads\/product-images\/[a-f0-9]+/i);
+    if (uploadMatch && req) {
+      const host = req.get('host');
+      const protocol = req.headers?.['x-forwarded-proto'] || req.protocol || 'http';
+      obj.image = `${protocol}://${host}${uploadMatch[0]}`;
+    } else if (obj.image.startsWith('/api/') && req) {
+      const host = req.get('host');
+      const protocol = req.headers?.['x-forwarded-proto'] || req.protocol || 'http';
+      obj.image = `${protocol}://${host}${obj.image}`;
+    }
+  }
+  return obj;
+};
 
 // Synchronizes a vendor's categories array with the active products they currently sell
 export const syncVendorCategories = async (vendorId) => {
@@ -80,12 +127,16 @@ export const getAllProducts = async (req, res) => {
     const products = await Product.find(filter)
       .populate('category', 'name slug icon type')
       .populate('vendor', 'storeName ownerName phone storeType isOpen rating minOrderValue avgPrepTimeMins')
-      .sort({ inStock: -1, createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
+      .sort({ inStock: -1, createdAt: -1, _id: 1 })
+      .skip(paging.skip)
+      .limit(paging.limit);
 
     res.json({
       success: true,
-      page: paging.page, limit: paging.limit, count: products.length,
-      products
+      page: paging.page,
+      limit: paging.limit,
+      count: products.length,
+      products: products.map((p) => formatProductResponse(p, req))
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -109,7 +160,7 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    res.json({ success: true, product });
+    res.json({ success: true, product: formatProductResponse(product, req) });
   } catch (error) {
     if (error.name === 'CastError') {
       return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'Invalid product ID format' });
@@ -119,11 +170,11 @@ export const getProductById = async (req, res) => {
 };
 
 // @desc    Get products by vendor ID
-// @route   GET /api/products/vendor/:vendorId
+// @route   GET /api/products/vendor/:vendorId or GET /api/vendors/:id/products
 export const getVendorProducts = async (req, res) => {
   try {
     const paging = pagination(req.query);
-    let { vendorId } = req.params;
+    let vendorId = req.params.vendorId || req.params.id;
 
     // If 'default_vendor' or empty, find first active vendor
     if (!vendorId || vendorId === 'default_vendor' || !mongoose.isValidObjectId(vendorId)) {
@@ -135,14 +186,21 @@ export const getVendorProducts = async (req, res) => {
       return res.json({ success: true, count: 0, products: [] });
     }
 
+    const totalCount = await Product.countDocuments({ vendor: vendorId, isActive: true });
+
     const products = await Product.find({ vendor: vendorId, isActive: true })
       .populate('category', 'name slug icon type')
-      .sort({ inStock: -1, createdAt: -1, _id: 1 }).skip(paging.skip).limit(paging.limit);
+      .sort({ inStock: -1, createdAt: -1, _id: 1 })
+      .skip(paging.skip)
+      .limit(paging.limit);
 
     res.json({
       success: true,
-      page: paging.page, limit: paging.limit, count: products.length,
-      products
+      page: paging.page,
+      limit: paging.limit,
+      count: products.length,
+      total: totalCount,
+      products: products.map((p) => formatProductResponse(p, req))
     });
   } catch (error) {
     console.error('Error fetching vendor products:', error);
@@ -170,8 +228,39 @@ export const createProduct = async (req, res) => {
       tags = []
     } = req.body;
 
-    if (!name || price === undefined) {
-      return res.status(400).json({ success: false, message: 'Name and price are required' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ success: false, code: 'INVALID_NAME', message: 'Product title is required.' });
+    }
+    const cleanName = name.trim().slice(0, 120);
+
+    const numPrice = parseNumericField(price);
+    if (numPrice === null || numPrice <= 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PRICE',
+        message: 'Selling price must be a finite number greater than 0.'
+      });
+    }
+    const roundedPrice = Math.round(numPrice * 100) / 100;
+
+    let roundedMrp = roundedPrice;
+    if (mrp !== undefined && mrp !== null && String(mrp).trim() !== '') {
+      const numMrp = parseNumericField(mrp);
+      if (numMrp === null || numMrp < 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_MRP',
+          message: 'MRP must be a finite, non-negative number.'
+        });
+      }
+      roundedMrp = Math.round(numMrp * 100) / 100;
+      if (roundedMrp < roundedPrice) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_MRP',
+          message: 'MRP cannot be lower than the selling price.'
+        });
+      }
     }
 
     // Determine vendor from authenticated user
@@ -182,7 +271,11 @@ export const createProduct = async (req, res) => {
       vendorId = req.user?.vendorId || req.user?.id || req.user?._id;
     }
     if (!vendorId || !mongoose.isValidObjectId(vendorId)) {
-      return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Vendor authentication required to add a product.' });
+      return res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN',
+        message: 'Vendor authentication required to add a product.'
+      });
     }
 
     // Strict category validation: require existing active category by real database ID
@@ -227,25 +320,56 @@ export const createProduct = async (req, res) => {
       validatedSubCategory = matchedSub.name;
     }
 
-    const qty = stockQty !== undefined ? Number(stockQty) : stock !== undefined ? Number(stock) : 25;
+    // Parse stock: integer non-negative packs
+    const rawStock = stockQty !== undefined ? stockQty : stock;
+    let qty = 25;
+    if (rawStock !== undefined && rawStock !== null && String(rawStock).trim() !== '') {
+      const numStock = parseNumericField(rawStock);
+      if (numStock === null || numStock < 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_STOCK',
+          message: 'Stock must be a non-negative integer.'
+        });
+      }
+      qty = Math.floor(numStock);
+    }
+
+    if (!unit || typeof unit !== 'string' || !unit.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_UNIT',
+        message: 'Pack size / unit is required (e.g. 10 kg, 10 litre, 10 packets, 750 g).'
+      });
+    }
+    const cleanUnit = unit.trim().slice(0, 50);
+    const cleanDesc = typeof description === 'string' ? description.trim().slice(0, 1000) : '';
+    const cleanImg = typeof image === 'string' && image.trim()
+      ? toPortableImagePath(image.trim()).slice(0, 500)
+      : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80';
 
     const newProduct = new Product({
-      name: name.trim(),
-      description: description || '',
-      image: image || 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80',
+      name: cleanName,
+      description: cleanDesc,
+      image: cleanImg,
       vendor: vendorId,
       category: categoryId,
       subCategory: validatedSubCategory,
-      price: Number(price),
-      mrp: mrp ? Number(mrp) : Number(price) * 1.2,
-      unit: unit || '1 pc',
+      price: roundedPrice,
+      mrp: roundedMrp,
+      unit: cleanUnit,
       stockQty: qty,
       inStock: qty > 0,
       isVeg: Boolean(isVeg),
-      tags: Array.isArray(tags) ? tags : tags ? [tags] : [name.toLowerCase()]
+      tags: Array.isArray(tags) ? tags : tags ? [tags] : [cleanName.toLowerCase()]
     });
 
     const savedProduct = await (await newProduct.save()).populate('category vendor');
+
+    // Confirm uploaded image in durable GridFS if applicable
+    if (cleanImg && cleanImg.includes('/product-images/')) {
+      await confirmProductImage(cleanImg, savedProduct._id);
+    }
 
     // Maintain vendor's category membership
     await syncVendorCategories(vendorId);
@@ -253,29 +377,12 @@ export const createProduct = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Product successfully added to MongoDB',
-      product: savedProduct
+      product: formatProductResponse(savedProduct, req)
     });
   } catch (error) {
     console.error('Error creating product:', error);
     res.status(500).json({ success: false, message: error.message || 'Error saving product' });
   }
-};
-
-// Helper to strictly parse numeric inputs; rejects null, booleans, empty/whitespace strings, arrays, objects
-export const parseNumericField = (val) => {
-  if (val === null || typeof val === 'boolean' || Array.isArray(val) || typeof val === 'object') {
-    return null;
-  }
-  if (typeof val === 'number') {
-    return Number.isFinite(val) ? val : null;
-  }
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (!trimmed) return null;
-    const num = Number(trimmed);
-    return Number.isFinite(num) ? num : null;
-  }
-  return null;
 };
 
 // @desc    Update product details
@@ -326,14 +433,14 @@ export const updateProduct = async (req, res) => {
       if (typeof updateData.unit !== 'string' || !updateData.unit.trim()) {
         return res.status(400).json({ success: false, code: 'INVALID_UNIT', message: 'Product unit must be a non-empty string.' });
       }
-      updateData.unit = updateData.unit.trim().slice(0, 30);
+      updateData.unit = updateData.unit.trim().slice(0, 50);
     }
 
     if (updateData.image !== undefined) {
       if (typeof updateData.image !== 'string') {
         return res.status(400).json({ success: false, code: 'INVALID_IMAGE', message: 'Product image must be a string.' });
       }
-      updateData.image = updateData.image.trim().slice(0, 500);
+      updateData.image = toPortableImagePath(updateData.image.trim()).slice(0, 500);
     }
 
     // Strict category validation: verify database ObjectId and active status
@@ -393,13 +500,10 @@ export const updateProduct = async (req, res) => {
 
     if (updateData.price !== undefined) {
       const numPrice = parseNumericField(updateData.price);
-      if (numPrice === null || numPrice < 0) {
-        return res.status(400).json({ success: false, code: 'INVALID_PRICE', message: 'Price must be a finite, non-negative number.' });
+      if (numPrice === null || numPrice <= 0) {
+        return res.status(400).json({ success: false, code: 'INVALID_PRICE', message: 'Price must be a finite number greater than 0.' });
       }
       const roundedPrice = Math.round(numPrice * 100) / 100;
-      if (!Number.isFinite(roundedPrice) || roundedPrice < 0) {
-        return res.status(400).json({ success: false, code: 'INVALID_PRICE', message: 'Price must be a finite, non-negative number.' });
-      }
       updateData.price = roundedPrice;
     }
 
@@ -409,10 +513,18 @@ export const updateProduct = async (req, res) => {
         return res.status(400).json({ success: false, code: 'INVALID_MRP', message: 'MRP must be a finite, non-negative number.' });
       }
       const roundedMrp = Math.round(numMrp * 100) / 100;
-      if (!Number.isFinite(roundedMrp) || roundedMrp < 0) {
-        return res.status(400).json({ success: false, code: 'INVALID_MRP', message: 'MRP must be a finite, non-negative number.' });
+      const effectivePrice = updateData.price !== undefined ? updateData.price : existing.price;
+      if (roundedMrp < effectivePrice) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_MRP',
+          message: 'MRP cannot be lower than the selling price.'
+        });
       }
       updateData.mrp = roundedMrp;
+    } else if (updateData.price !== undefined && existing.mrp && existing.mrp < updateData.price) {
+      // Selling price was raised above existing MRP: update MRP to match
+      updateData.mrp = updateData.price;
     }
 
     if (updateData.stockQty !== undefined) {
@@ -454,13 +566,18 @@ export const updateProduct = async (req, res) => {
       { new: true, runValidators: true }
     ).populate('category vendor');
 
+    // Confirm new image in GridFS if updated
+    if (updateData.image && updateData.image.includes('/product-images/')) {
+      await confirmProductImage(updateData.image, id);
+    }
+
     // Maintain vendor's category membership after category/status changes
     await syncVendorCategories(existing.vendor);
 
     res.json({
       success: true,
       message: 'Product updated successfully',
-      product: updated
+      product: formatProductResponse(updated, req)
     });
   } catch (error) {
     console.error('Error updating product:', error);
@@ -528,7 +645,7 @@ export const toggleProductStock = async (req, res) => {
     res.json({
       success: true,
       message: `Product stock updated to ${updated.stockQty} units (${updated.inStock ? 'In Stock' : 'Out of Stock'})`,
-      product: updated
+      product: formatProductResponse(updated, req)
     });
   } catch (error) {
     console.error('Error toggling stock:', error);

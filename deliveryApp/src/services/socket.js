@@ -26,31 +26,13 @@ const getIO = () => {
   }
 };
 
+import { SOCKET_SERVER_URL } from '../config/env';
+
 export const getSocketUrl = () => {
-  if(process.env.EXPO_PUBLIC_API_URL)return process.env.EXPO_PUBLIC_API_URL.replace(/\/api\/?$/, '');
-  if (Platform.OS === 'web') {
-    if (
-      typeof window !== 'undefined' &&
-      window.location &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      return `http://${window.location.hostname}:5000`;
-    }
-    return process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'https://farm-mart-api.onrender.com';
-  }
-
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.replace('/api', '');
-  }
-
-  if (!__DEV__) {
-    return 'https://farm-mart-api.onrender.com';
-  }
-
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000';
-  }
-
+  try {
+    if (typeof SOCKET_SERVER_URL !== 'undefined') return SOCKET_SERVER_URL;
+  } catch {}
+  if (process.env?.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL.replace(/\/api\/?$/, '');
   return 'http://localhost:5000';
 };
 

@@ -5,6 +5,7 @@ import Admin from '../models/Admin.js';
 import { REQUIRED_SCHEMA } from '../scripts/provisionStagingDb.js';
 import { runAdminAccountCheck } from '../scripts/checkAdminAccounts.js';
 import { runStagingAdminSetup, STAGING_ADMIN_ROLE_PERMISSIONS } from '../scripts/setupStagingAdmin.js';
+import { resetAdminPassword } from '../scripts/resetAdminPassword.js';
 
 test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => {
   const origConnect = mongoose.connect;
@@ -181,5 +182,73 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
       async () => runStagingAdminSetup({ uri: validStagingUri, createStagingAdmin: true }),
       /Refusing to create account\. 1 admin account\(s\) already exist/
     );
+  });
+
+  await t.test('9. Password Reset Validation: resetAdminPassword rejects passwords under 8 characters', async () => {
+    await assert.rejects(
+      async () => resetAdminPassword({ newPassword: 'short', uri: 'mongodb://localhost:27017/test' }),
+      /Password must be at least 8 characters long/
+    );
+  });
+
+  await t.test('10. Nonexistent Admin: resetAdminPassword rejects if target admin is not found', async () => {
+    mongoose.connect = async () => {
+      mongoose.connection.name = 'test';
+      return mongoose;
+    };
+    mongoose.disconnect = async () => {};
+    Admin.findOne = async () => null;
+
+    await assert.rejects(
+      async () => resetAdminPassword({ username: 'missing_admin', newPassword: 'valid_password_123', uri: 'mongodb://localhost:27017/test' }),
+      /Administrator account with username "missing_admin" does not exist/
+    );
+  });
+
+  await t.test('11. Successful Reset: resetAdminPassword hashes password and preserves roles and access', async () => {
+    let updatedFilter = null;
+    let updatedDoc = null;
+
+    mongoose.connect = async () => {
+      mongoose.connection.name = 'test';
+      return mongoose;
+    };
+    mongoose.disconnect = async () => {};
+
+    Admin.findOne = async ({ username }) => {
+      if (username === 'superadmin') {
+        return {
+          _id: 'mock-admin-id',
+          id: 'super-admin-01',
+          username: 'superadmin',
+          role: 'superadmin',
+          name: 'Super Admin',
+          access: ['users', 'partners', 'riders', 'jobs']
+        };
+      }
+      return null;
+    };
+
+    Admin.updateOne = async (filter, update) => {
+      updatedFilter = filter;
+      updatedDoc = update;
+      return { matchedCount: 1, modifiedCount: 1 };
+    };
+
+    const res = await resetAdminPassword({
+      username: 'superadmin',
+      newPassword: 'new_secure_admin_password_99',
+      uri: 'mongodb://localhost:27017/test'
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(res.username, 'superadmin');
+    assert.equal(res.role, 'superadmin');
+    assert.deepEqual(res.access, ['users', 'partners', 'riders', 'jobs']);
+
+    assert.deepEqual(updatedFilter, { _id: 'mock-admin-id' });
+    assert.ok(updatedDoc.$set.password, 'Must update password');
+    assert.notEqual(updatedDoc.$set.password, 'new_secure_admin_password_99', 'Password must be hashed with bcrypt');
+    assert.ok(updatedDoc.$set.password.startsWith('$2'), 'Bcrypt hash format check');
   });
 });

@@ -55,11 +55,12 @@ export const ActiveNavigationScreen = ({ navigation }) => {
   };
 
   // Vendor / Store extraction
-  const storeName = currentTask?.vendor?.storeName || currentTask?.vendor?.name || currentTask?.pickupLocation || 'Partner Merchant Store';
-  const storePhone = currentTask?.vendor?.phone || '';
-  const storeAddress = getAddressString(currentTask?.vendor?.address, currentTask?.pickupAddress || 'Shop #12, Market Complex, Ludhiana');
-  const storeLat = currentTask?.vendor?.address?.location?.coordinates?.[1] ?? currentTask?.vendor?.location?.coordinates?.[1];
-  const storeLng = currentTask?.vendor?.address?.location?.coordinates?.[0] ?? currentTask?.vendor?.location?.coordinates?.[0];
+  const pickupSnapshot = currentTask?.pickupAddress;
+  const storeName = pickupSnapshot?.storeName || currentTask?.vendor?.storeName || currentTask?.vendor?.name || currentTask?.pickupLocation || 'Partner Merchant Store';
+  const storePhone = pickupSnapshot?.phone || currentTask?.vendor?.phone || '';
+  const storeAddress = getAddressString(pickupSnapshot || currentTask?.vendor?.address, typeof currentTask?.pickupAddress === 'string' ? currentTask.pickupAddress : 'Shop #12, Market Complex, Ludhiana');
+  const storeLat = pickupSnapshot?.location?.coordinates?.[1] ?? currentTask?.vendor?.address?.location?.coordinates?.[1] ?? currentTask?.vendor?.location?.coordinates?.[1];
+  const storeLng = pickupSnapshot?.location?.coordinates?.[0] ?? currentTask?.vendor?.address?.location?.coordinates?.[0] ?? currentTask?.vendor?.location?.coordinates?.[0];
 
   // Customer extraction
   const customerName = currentTask?.customer?.name || currentTask?.address?.name || currentTask?.customerName || 'Customer';

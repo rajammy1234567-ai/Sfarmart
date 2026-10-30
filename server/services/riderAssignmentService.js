@@ -99,7 +99,7 @@ async function offerToNextRider(order, attemptedRiderIds) {
   const io = getIO();
 
   try {
-    const point = storePoint(order.vendor);
+    const point = storePoint(order.pickupAddress || order.vendor);
     if (!validCoordinates(point.lat, point.lng)) {
       activeOffers.delete(orderId);
       return;
@@ -141,12 +141,18 @@ async function offerToNextRider(order, attemptedRiderIds) {
 
     console.log(`🎯 [RiderAssignment] Offering Order #${order.orderNumber} to Rider ${candidate.name} (${candidate.phone})`);
 
+    const pickupSource = (order.pickupAddress?.location?.coordinates?.length || order.pickupAddress?.line1)
+      ? order.pickupAddress
+      : order.vendor;
+
     const offerPayload = {
       orderId: order._id,
       orderNumber: order.orderNumber,
-      storeName: order.vendor?.storeName || 'Merchant Partner',
-      storeAddress: order.vendor?.address || 'Store Location',
-      storePhone: order.vendor?.phone || '',
+      storeName: pickupSource?.storeName || order.vendor?.storeName || 'Merchant Partner',
+      storeAddress: pickupSource?.line1
+        ? `${pickupSource.line1}, ${pickupSource.city || ''} ${pickupSource.pincode || ''}`.trim()
+        : (order.vendor?.address?.line1 ? `${order.vendor.address.line1}, ${order.vendor.address.city || ''}` : (order.vendor?.address || 'Store Location')),
+      storePhone: pickupSource?.phone || order.vendor?.phone || '',
       customerName: order.customer?.name || order.address?.name || 'Customer',
       customerAddress: `${order.address?.line1 || ''}, ${order.address?.city || ''}`,
       itemsCount: order.items?.length || 1,
@@ -292,7 +298,7 @@ export async function handleRiderAccept(orderId, riderId) {
         locationUpdatedAt: { $gte: new Date(Date.now() - 120000) }
       }).session(session);
 
-      if (!rider || distanceKm({ lat: rider.currentLocation?.coordinates?.[1], lng: rider.currentLocation?.coordinates?.[0] }, storePoint(candidate.vendor)) > 8) {
+      if (!rider || distanceKm({ lat: rider.currentLocation?.coordinates?.[1], lng: rider.currentLocation?.coordinates?.[0] }, storePoint(candidate.pickupAddress || candidate.vendor)) > 8) {
         throw Object.assign(new Error('Order unavailable or rider must be online with fresh GPS within 8 km of store.'), { code: 'RIDER_INELIGIBLE' });
       }
 

@@ -7,6 +7,7 @@ import { SocketProvider, useSocket } from './src/context/SocketContext';
 import { NewOrderModal } from './src/components/NewOrderModal';
 import { PartnerNavigator } from './src/navigation/PartnerNavigator';
 import { PartnerLoginScreen } from './src/screens/PartnerLoginScreen';
+import { PartnerRegisterScreen } from './src/screens/PartnerRegisterScreen';
 import { soundAlert } from './src/utils/soundAlert';
 import { colors } from './src/theme/colors';
 import { setNavigationRef, initNotificationListeners } from './src/services/notificationService';
@@ -74,6 +75,7 @@ function PartnerMain() {
 
 function PartnerContent() {
   const { vendor, token, orders, isLoading } = usePartner();
+  const [authScreen, setAuthScreen] = React.useState('LOGIN'); // 'LOGIN' | 'REGISTER'
   const { pendingOrder, setPendingOrder, acceptOrder, rejectOrder, dismissPendingOrder, connectionMode } = useSocket();
   const notifiedOrderIdsRef = React.useRef(new Set());
 
@@ -101,7 +103,18 @@ function PartnerContent() {
   }
 
   if (!vendor || !token) {
-    return <PartnerLoginScreen />;
+    if (authScreen === 'REGISTER') {
+      return (
+        <PartnerRegisterScreen
+          onNavigateToLogin={() => setAuthScreen('LOGIN')}
+        />
+      );
+    }
+    return (
+      <PartnerLoginScreen
+        onNavigateToRegister={() => setAuthScreen('REGISTER')}
+      />
+    );
   }
 
   return (

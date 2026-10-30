@@ -1,13 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client/dist/socket.io.js';
 import { soundAlert } from '../utils/soundAlert';
-import { API_BASE_URL } from '../config/env';
+import { API_BASE_URL, SOCKET_SERVER_URL } from '../config/env';
 import storage from '../services/storage';
 import { publishStock } from '../services/stockEvents';
-
-const SOCKET_SERVER_URL = API_BASE_URL
-  ? API_BASE_URL.replace(/\/api\/?$/, '')
-  : 'http://localhost:5000';
 
 const SocketContext = createContext();
 

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
   }
 
   if (Platform.OS === 'web') {
@@ -13,9 +13,13 @@ const getBaseUrl = () => {
     return 'http://localhost:5000/api';
   }
 
-  // Production standalone APK fallback
-  if (!__DEV__) {
-    return 'https://farm-mart-api.onrender.com/api';
+  const isDev = typeof __DEV__ !== 'undefined'
+    ? __DEV__
+    : (process.env.NODE_ENV === 'test' || process.env.NODE_ENV !== 'production');
+
+  // Prevent release builds from silently falling back to staging or legacy endpoints
+  if (!isDev) {
+    throw new Error('[Configuration Error] Missing EXPO_PUBLIC_API_URL for release build. Ensure an explicit API endpoint is configured.');
   }
 
   // Real phone over Wi-Fi: Constants.expoConfig?.hostUri gives dev PC's IP (e.g. 192.168.1.x)
@@ -37,7 +41,9 @@ const getBaseUrl = () => {
 };
 
 export const API_BASE_URL = getBaseUrl();
+export const SOCKET_SERVER_URL = API_BASE_URL ? API_BASE_URL.replace(/\/api\/?$/, '') : 'http://localhost:5000';
 
 export default {
-  API_BASE_URL
+  API_BASE_URL,
+  SOCKET_SERVER_URL
 };

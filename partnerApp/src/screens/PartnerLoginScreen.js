@@ -22,7 +22,7 @@ import { WaterBackground } from '../components/WaterBackground';
 const LOGO = require('../../assets/farmart_logo.png');
 
 
-export const PartnerLoginScreen = () => {
+export const PartnerLoginScreen = ({ navigation, onNavigateToRegister }) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width > 600;
@@ -196,6 +196,32 @@ export const PartnerLoginScreen = () => {
               Verified Merchant Portal. Each partner account is isolated with individual phone & password credentials.
             </Text>
           </View>
+
+          {/* Visible Register Your Shop Entry */}
+          <View style={styles.registerSection}>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>NEW SHOP OWNER?</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.registerBtn}
+              onPress={() => {
+                if (typeof onNavigateToRegister === 'function') {
+                  onNavigateToRegister();
+                } else if (navigation && typeof navigation.navigate === 'function') {
+                  navigation.navigate('Register');
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Register your shop"
+              activeOpacity={0.8}
+            >
+              <Ionicons name="storefront-outline" size={18} color="#ea580c" style={{ marginRight: 8 }} />
+              <Text style={styles.registerBtnText}>Register Your Shop</Text>
+            </TouchableOpacity>
+          </View>
         </GlassCard>
       </ScrollView>
     </View>
@@ -349,5 +375,40 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     lineHeight: 16
+  },
+  registerSection: {
+    marginTop: 20
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0'
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    paddingHorizontal: 10,
+    letterSpacing: 0.5
+  },
+  registerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(234, 88, 12, 0.4)',
+    backgroundColor: 'rgba(234, 88, 12, 0.06)'
+  },
+  registerBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ea580c'
   }
 });

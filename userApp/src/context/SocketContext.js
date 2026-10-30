@@ -3,11 +3,7 @@ import io from 'socket.io-client';
 import storage from '../services/storage';
 import { refreshAuthToken, isCurrentSessionTerminated, isSessionTeardownSuspended } from '../services/api';
 
-import { API_BASE_URL } from '../config/env';
-
-const SOCKET_SERVER_URL = API_BASE_URL
-  ? API_BASE_URL.replace(/\/api\/?$/, '')
-  : 'http://localhost:5000';
+import { API_BASE_URL, SOCKET_SERVER_URL } from '../config/env';
 
 const SocketContext = createContext();
 

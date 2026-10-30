@@ -79,6 +79,27 @@ const orderSchema = new mongoose.Schema(
       },
       unconfirmedRazorpayOrderId: String
     },
+    pickupAddress: {
+      vendorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Vendor'
+      },
+      storeName: { type: String, trim: true },
+      phone: { type: String, trim: true },
+      line1: { type: String, trim: true },
+      city: { type: String, trim: true },
+      pincode: { type: String, trim: true },
+      location: {
+        type: {
+          type: String,
+          enum: ['Point'],
+          default: 'Point'
+        },
+        coordinates: {
+          type: [Number]
+        }
+      }
+    },
     address: {
       name: { type: String, required: true },
       phone: { type: String, required: true },

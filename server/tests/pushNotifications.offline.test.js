@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Vendor from '../models/Vendor.js';
 import Rider from '../models/Rider.js';
+import PushReceipt from '../models/PushReceipt.js';
 import { maskPushToken, sendExpoPushNotification, checkExpoPushReceipts, notifyRiderDeliveryOffer } from '../services/notify.js';
 import { registerPushToken, unregisterPushToken } from '../controllers/authController.js';
 
@@ -19,6 +20,14 @@ const makeMockRes = () => {
 };
 
 test('Push Notification Unit & Offline Test Suite', async (t) => {
+  const origPushReceiptCreate = PushReceipt.create;
+  const origPushReceiptUpdateOne = PushReceipt.updateOne;
+  PushReceipt.create = async () => ({ acknowledged: true });
+  PushReceipt.updateOne = async () => ({ acknowledged: true });
+  t.after(() => {
+    PushReceipt.create = origPushReceiptCreate;
+    PushReceipt.updateOne = origPushReceiptUpdateOne;
+  });
   await t.test('1. maskPushToken securely masks tokens for logging', () => {
     assert.equal(maskPushToken('ExponentPushToken[AbCdEf123456]'), '...23456]');
     assert.equal(maskPushToken('ExpoPushToken[xyz987]'), '...yz987]');
@@ -106,10 +115,14 @@ test('Push Notification Unit & Offline Test Suite', async (t) => {
     // Spy on User.updateMany to ensure invalid token cleanup is triggered
     let cleanupCalled = false;
     const origUserUpdateMany = User.updateMany;
+    const origVendorUpdateMany = Vendor.updateMany;
+    const origRiderUpdateMany = Rider.updateMany;
     User.updateMany = async () => {
       cleanupCalled = true;
       return { acknowledged: true };
     };
+    Vendor.updateMany = async () => ({ acknowledged: true });
+    Rider.updateMany = async () => ({ acknowledged: true });
 
     try {
       global.fetch = async () => ({
@@ -138,6 +151,8 @@ test('Push Notification Unit & Offline Test Suite', async (t) => {
       process.env.DISABLE_EXTERNAL_NOTIFICATIONS = originalEnv;
       global.fetch = originalFetch;
       User.updateMany = origUserUpdateMany;
+      Vendor.updateMany = origVendorUpdateMany;
+      Rider.updateMany = origRiderUpdateMany;
     }
   });
 
@@ -417,6 +432,8 @@ test('Push Notification Unit & Offline Test Suite', async (t) => {
     Rider.updateMany = async () => { riderCleaned = true; return { acknowledged: true }; };
 
     global.fetch = async () => ({
+      ok: true,
+      status: 200,
       json: async () => ({
         data: {
           'ticket_rec_1': { status: 'ok' },

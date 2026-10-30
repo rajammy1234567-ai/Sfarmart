@@ -302,6 +302,7 @@ export const getActiveDeliveryOrder = async (req, res) => {
         id: order._id,
         orderNumber: order.orderNumber,
         status: order.status,
+        pickupAddress: order.pickupAddress,
         vendor: order.vendor,
         customer: order.customer,
         address: order.address,

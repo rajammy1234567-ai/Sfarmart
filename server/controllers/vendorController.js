@@ -10,7 +10,7 @@ export const getAllVendors = async (req, res) => {
   try {
     const paging = pagination(req.query);
     const { storeType, openOnly, category } = req.query;
-    const query = { isActive: true };
+    const query = { isActive: true, isApproved: true };
 
     if (storeType) {
       query.storeType = storeType.toUpperCase();

@@ -8,7 +8,7 @@ import {
   performTeardown,
   waitForAutoDispatchedOffer,
   createdFixtureIds
-} from './orderLifecycle.liveStaging.test.js';
+} from './helpers/liveStagingHelpers.js';
 import {
   APPROVED_STAGING_HOST,
   APPROVED_DATABASE
@@ -19,6 +19,7 @@ import Category from '../models/Category.js';
 import Rider from '../models/Rider.js';
 import Vendor from '../models/Vendor.js';
 import User from '../models/User.js';
+import PushReceipt from '../models/PushReceipt.js';
 
 test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
   const validUri = `mongodb+srv://staging_tester:SuperSecretPassword123@${APPROVED_STAGING_HOST}/${APPROVED_DATABASE}?retryWrites=true&w=majority`;
@@ -330,6 +331,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
     const origRiderCountDocuments = Rider.countDocuments;
     const origVendorCountDocuments = Vendor.countDocuments;
     const origUserCountDocuments = User.countDocuments;
+    const origPushReceiptCountDocuments = PushReceipt.countDocuments;
+    const origPushReceiptDeleteMany = PushReceipt.deleteMany;
 
     let disconnected = false;
     let recoveredOrderId = 'recovered_order_id_88888';
@@ -379,6 +382,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = async () => 0;
       Vendor.countDocuments = async () => 0;
       User.countDocuments = async () => 0;
+      PushReceipt.countDocuments = async () => 0;
+      PushReceipt.deleteMany = async () => ({ deletedCount: 0 });
 
       // Populate test fixtures in tracking sets
       const testRunPrefix = 'TEST_RECOVERY_RUN_99';
@@ -431,6 +436,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = origRiderCountDocuments;
       Vendor.countDocuments = origVendorCountDocuments;
       User.countDocuments = origUserCountDocuments;
+      PushReceipt.countDocuments = origPushReceiptCountDocuments;
+      PushReceipt.deleteMany = origPushReceiptDeleteMany;
     }
   });
 
@@ -476,6 +483,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
     const origRiderCountDocuments = Rider.countDocuments;
     const origVendorCountDocuments = Vendor.countDocuments;
     const origUserCountDocuments = User.countDocuments;
+    const origPushReceiptCountDocuments = PushReceipt.countDocuments;
+    const origPushReceiptDeleteMany = PushReceipt.deleteMany;
 
     let disconnected = false;
     const attemptedDeletions = [];
@@ -505,6 +514,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = async () => 0;
       Vendor.countDocuments = async () => 0;
       User.countDocuments = async () => 0;
+      PushReceipt.countDocuments = async () => 0;
+      PushReceipt.deleteMany = async () => ({ deletedCount: 0 });
 
       createdFixtureIds.orders.clear();
       createdFixtureIds.products.clear();
@@ -551,6 +562,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = origRiderCountDocuments;
       Vendor.countDocuments = origVendorCountDocuments;
       User.countDocuments = origUserCountDocuments;
+      PushReceipt.countDocuments = origPushReceiptCountDocuments;
+      PushReceipt.deleteMany = origPushReceiptDeleteMany;
     }
   });
 
@@ -567,6 +580,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
     const origRiderCountDocuments = Rider.countDocuments;
     const origVendorCountDocuments = Vendor.countDocuments;
     const origUserCountDocuments = User.countDocuments;
+    const origPushReceiptCountDocuments = PushReceipt.countDocuments;
+    const origPushReceiptDeleteMany = PushReceipt.deleteMany;
 
     let disconnected = false;
 
@@ -585,6 +600,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = async () => 0;
       Vendor.countDocuments = async () => 0;
       User.countDocuments = async () => 0;
+      PushReceipt.countDocuments = async () => 0;
+      PushReceipt.deleteMany = async () => ({ deletedCount: 0 });
 
       createdFixtureIds.orders.clear();
       createdFixtureIds.products.clear();
@@ -614,6 +631,8 @@ test('Offline Staging Guards & Teardown Hardening Test Suite', async (t) => {
       Rider.countDocuments = origRiderCountDocuments;
       Vendor.countDocuments = origVendorCountDocuments;
       User.countDocuments = origUserCountDocuments;
+      PushReceipt.countDocuments = origPushReceiptCountDocuments;
+      PushReceipt.deleteMany = origPushReceiptDeleteMany;
     }
   });
 });

@@ -18,13 +18,23 @@
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     },
-    "production": {
+    "staging": {
+      "distribution": "internal",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://farmart-backend-staging.onrender.com/api",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     }

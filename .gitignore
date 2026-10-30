@@ -72,3 +72,6 @@ server/tests/gen_gps_test.cjs
 /userApp/temp_export_test/
 /partnerApp/src/navigation/Untitled-1.txt
 **/*firebase-adminsdk*.json
+
+# Local-only administrative recovery utilities
+server/scripts/resetAdminPassword.*

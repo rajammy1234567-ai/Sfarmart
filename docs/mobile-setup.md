@@ -1,4 +1,4 @@
-﻿# Clone and run Farmart
+# Clone and run Farmart
 
 ## Checkout
 git clone --branch hardening-capacity https://github.com/rajammy1234567-ai/Sfarmart.git
@@ -10,8 +10,9 @@ userApp, partnerApp, deliveryApp.
 
 ## Mobile development
 Set EXPO_PUBLIC_API_URL to the intended backend /api URL.
-Current reviewed User and Partner backend:
+Current reviewed User, Partner, and Delivery staging backend:
 https://farmart-backend-staging.onrender.com/api
+Release builds require an explicit EXPO_PUBLIC_API_URL and do not silently fall back to staging.
 
 From the app folder, run:
 npx expo start --go --lan

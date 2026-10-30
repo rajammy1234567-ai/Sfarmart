@@ -688,13 +688,7 @@ export async function sendExpoPushNotification(tokens, title, body, data = {}) {
 
           if (ticket.details?.error === 'DeviceNotRegistered' && invalidToken) {
             // Clean up obsolete device registration across models
-            cleanupPromises.push(
-              User.updateMany({ 'expoPushTokens.token': invalidToken }, { $pull: { expoPushTokens: { token: invalidToken } } }),
-              User.updateMany({ expoPushTokens: invalidToken }, { $pull: { expoPushTokens: invalidToken } }),
-              Vendor.updateMany({ expoPushTokens: invalidToken }, { $pull: { expoPushTokens: invalidToken } }),
-              Rider.updateMany({ 'expoPushTokens.token': invalidToken }, { $pull: { expoPushTokens: { token: invalidToken } } }),
-              Rider.updateMany({ expoPushTokens: invalidToken }, { $pull: { expoPushTokens: invalidToken } })
-            );
+            cleanupPromises.push(purgeInvalidDeviceTokens(invalidToken));
           }
         }
       }

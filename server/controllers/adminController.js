@@ -3,6 +3,8 @@ import Application from '../models/Application.js';
 import JobApplication from '../models/Job.js';
 import User from '../models/User.js';
 import ContactInquiry from '../models/Contact.js';
+import Vendor from '../models/Vendor.js';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 import { getMemoryApplications } from './applicationController.js';
@@ -163,22 +165,43 @@ export const getAdminData = async (req, res) => {
     }
 
     // Determine which modules are permitted to be retrieved
-    const canAccessPartners = isSuperAdmin || (subAdminAccess.includes('partners') && (!requestedModule || requestedModule === 'partners'));
-    const canAccessJobs = isSuperAdmin || (subAdminAccess.includes('jobs') && (!requestedModule || requestedModule === 'jobs'));
-    const canAccessUsers = isSuperAdmin || (subAdminAccess.includes('users') && (!requestedModule || requestedModule === 'users'));
-    const canAccessInquiries = isSuperAdmin || (subAdminAccess.includes('inquiries') && (!requestedModule || requestedModule === 'inquiries'));
+    const canAccessPartners = (isSuperAdmin || subAdminAccess.includes('partners')) && (!requestedModule || requestedModule === 'partners');
+    const canAccessJobs = (isSuperAdmin || subAdminAccess.includes('jobs')) && (!requestedModule || requestedModule === 'jobs');
+    const canAccessUsers = (isSuperAdmin || subAdminAccess.includes('users')) && (!requestedModule || requestedModule === 'users');
+    const canAccessInquiries = (isSuperAdmin || subAdminAccess.includes('inquiries')) && (!requestedModule || requestedModule === 'inquiries');
 
-    const [applications, jobApplications, users, contactInquiries] = await Promise.all([
+    const [applications, jobApplications, users, contactInquiries, vendors] = await Promise.all([
       canAccessPartners ? Application.find().sort({ createdAt: -1 }) : Promise.resolve([]),
       canAccessJobs ? JobApplication.find().sort({ appliedAt: -1 }) : Promise.resolve([]),
       canAccessUsers ? User.find({}, '-password').sort({ _id: -1 }) : Promise.resolve([]),
-      canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }) : Promise.resolve([])
+      canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }) : Promise.resolve([]),
+      canAccessPartners ? Vendor.find().sort({ createdAt: -1 }) : Promise.resolve([])
     ]);
+
+    let mergedPartners = applications.length > 0 ? applications : getMemoryApplications().reverse();
+    if (canAccessPartners && Array.isArray(vendors) && vendors.length > 0) {
+      const vendorApps = vendors.map(v => ({
+        id: String(v._id),
+        _id: v._id,
+        fullName: `${v.ownerName} (${v.storeName})`,
+        phone: v.phone,
+        categoryId: v.storeType,
+        district: v.address?.city || '',
+        state: v.address?.state || '',
+        status: (v.isApproved && v.isActive) ? 'APPROVED' : 'RECEIVED',
+        isApproved: v.isApproved,
+        isActive: v.isActive,
+        isOpen: v.isOpen,
+        type: 'partner',
+        createdAt: v.createdAt
+      }));
+      mergedPartners = [...vendorApps, ...mergedPartners];
+    }
 
     res.json({
       success: true,
       data: {
-        applications: canAccessPartners ? (applications.length > 0 ? applications : getMemoryApplications().reverse()) : [],
+        applications: canAccessPartners ? mergedPartners : [],
         jobApplications: canAccessJobs ? (jobApplications.length > 0 ? jobApplications : getMemoryJobs().reverse()) : [],
         users: canAccessUsers ? (users.length > 0 ? users : getMemoryUsers().map(({ password, ...u }) => u).reverse()) : [],
         contactInquiries: canAccessInquiries ? (contactInquiries.length > 0 ? contactInquiries : getMemoryInquiries().reverse()) : []
@@ -189,10 +212,10 @@ export const getAdminData = async (req, res) => {
     const subAdminAccess = Array.isArray(req.user?.access) ? req.user.access : [];
     const requestedModule = req.query?.module;
 
-    const canAccessPartners = isSuperAdmin || (subAdminAccess.includes('partners') && (!requestedModule || requestedModule === 'partners'));
-    const canAccessJobs = isSuperAdmin || (subAdminAccess.includes('jobs') && (!requestedModule || requestedModule === 'jobs'));
-    const canAccessUsers = isSuperAdmin || (subAdminAccess.includes('users') && (!requestedModule || requestedModule === 'users'));
-    const canAccessInquiries = isSuperAdmin || (subAdminAccess.includes('inquiries') && (!requestedModule || requestedModule === 'inquiries'));
+    const canAccessPartners = (isSuperAdmin || subAdminAccess.includes('partners')) && (!requestedModule || requestedModule === 'partners');
+    const canAccessJobs = (isSuperAdmin || subAdminAccess.includes('jobs')) && (!requestedModule || requestedModule === 'jobs');
+    const canAccessUsers = (isSuperAdmin || subAdminAccess.includes('users')) && (!requestedModule || requestedModule === 'users');
+    const canAccessInquiries = (isSuperAdmin || subAdminAccess.includes('inquiries')) && (!requestedModule || requestedModule === 'inquiries');
 
     res.json({
       success: true,
@@ -233,7 +256,23 @@ export const updateApplicationStatus = async (req, res) => {
 
   try {
     let updated = false;
-    if (type === 'partner') {
+    if (type === 'partner' || type === 'vendor') {
+      if (mongoose.isValidObjectId(id)) {
+        const vendorDoc = await Vendor.findById(id);
+        if (vendorDoc) {
+          if (status === 'APPROVED') {
+            vendorDoc.isApproved = true;
+            vendorDoc.isActive = true;
+            // Preserves intended store-opening rule: isOpen remains false until partner logs in and opens store
+          } else if (status === 'REJECTED') {
+            vendorDoc.isApproved = false;
+            vendorDoc.isActive = false;
+            vendorDoc.isOpen = false;
+          }
+          await vendorDoc.save();
+          return res.json({ success: true, message: `Status updated to ${status}` });
+        }
+      }
       const resObj = await Application.findOneAndUpdate({ id }, { status });
       if (resObj) updated = true;
     } else if (type === 'job') {

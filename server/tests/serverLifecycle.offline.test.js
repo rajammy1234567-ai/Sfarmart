@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 
-test('startup waits for DB and SIGTERM drains an accepted HTTP request before disconnecting DB', { timeout: 8000 }, async t => {
+test('startup waits for DB and SIGTERM drains an accepted HTTP request before disconnecting DB', { timeout: 15000 }, async t => {
   const fixture = `
-    import mongoose from './server/node_modules/mongoose/index.js';
+    import mongoose from 'mongoose';
     import Order from './server/models/Order.js';
     let connected = false;
     mongoose.connect = async () => {

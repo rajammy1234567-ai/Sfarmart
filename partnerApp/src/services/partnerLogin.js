@@ -25,3 +25,61 @@ export async function requestPartnerLogin(baseUrl, phone, password, request) {
   }
   return data;
 }
+
+export async function requestPartnerRegister(baseUrl, registrationData, request) {
+  const {
+    ownerName,
+    phone,
+    password,
+    storeName,
+    storeType,
+    address,
+    coordinates
+  } = registrationData || {};
+
+  const response = await request(`${baseUrl}/auth/vendor/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'identity' },
+    body: JSON.stringify({
+      ownerName,
+      phone,
+      password,
+      storeName,
+      storeType,
+      address,
+      coordinates
+    })
+  }, { timeoutMs: 60000 });
+
+  const data = await response.json();
+  if (!response.ok) {
+    if (response.status === 409) {
+      return {
+        success: false,
+        code: 'PHONE_ALREADY_REGISTERED',
+        message: typeof data?.message === 'string' ? data.message : 'This mobile number is already registered as a partner store.'
+      };
+    }
+    return {
+      success: false,
+      code: data?.code || 'REGISTRATION_REJECTED',
+      message: typeof data?.message === 'string' ? data.message : 'Partner registration could not be submitted. Please check the details and try again.'
+    };
+  }
+
+  if (data?.success !== true && data?.ok !== true) {
+    return {
+      success: false,
+      code: data?.code || 'REGISTRATION_FAILED',
+      message: typeof data?.message === 'string' ? data.message : 'Registration failed. Please check your information.'
+    };
+  }
+
+  return {
+    success: true,
+    pendingApproval: true,
+    code: data?.code || 'REGISTRATION_PENDING_APPROVAL',
+    message: typeof data?.message === 'string' ? data.message : 'Registration submitted successfully. Your account is pending admin approval.',
+    vendor: data?.vendor || null
+  };
+}

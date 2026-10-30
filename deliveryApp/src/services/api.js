@@ -3,36 +3,10 @@ import { Platform } from 'react-native';
 import storage from './storage';
 import { createSingleFlight, withReadRetry, isDefinitiveAuthFailure } from './requestPolicy';
 
-export const getBaseUrl = () => {
-  if(process.env.EXPO_PUBLIC_API_URL)return process.env.EXPO_PUBLIC_API_URL;
-  if (Platform.OS === 'web') {
-    if (
-      typeof window !== 'undefined' &&
-      window.location &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      return `http://${window.location.hostname}:5000/api`;
-    }
-    return process.env.EXPO_PUBLIC_API_URL || 'https://farm-mart-api.onrender.com/api';
-  }
+import { API_BASE_URL } from '../config/env';
 
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-
-  // Standalone production fallback
-  if (!__DEV__) {
-    return 'https://farm-mart-api.onrender.com/api';
-  }
-
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-
-  return 'http://localhost:5000/api';
-};
-
-export const API_BASE_URL = getBaseUrl();
+export { API_BASE_URL };
+export const getBaseUrl = () => API_BASE_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,

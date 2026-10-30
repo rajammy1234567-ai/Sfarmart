@@ -9,8 +9,12 @@ export function distanceKm(a, b) {
   const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
   return 6371 * 2 * Math.asin(Math.sqrt(Math.min(1, h)));
 }
-export function storePoint(vendor) {
-  const coordinates = vendor?.address?.location?.coordinates || vendor?.location?.coordinates;
+export function storePoint(source) {
+  const coordinates =
+    source?.pickupAddress?.location?.coordinates ||
+    source?.address?.location?.coordinates ||
+    source?.location?.coordinates ||
+    (Array.isArray(source?.coordinates) ? source.coordinates : undefined);
   return { lat: coordinates?.[1], lng: coordinates?.[0] };
 }
 export function canAccessOrder(user, order) {

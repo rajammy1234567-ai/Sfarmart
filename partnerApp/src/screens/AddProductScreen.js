@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { usePartner } from '../context/PartnerContext';
 import { colors } from '../theme/colors';
 import { GlassCard } from '../components/GlassCard';
@@ -54,7 +55,6 @@ export const getCategoryMeta = (catName = '') => {
   return { icon: 'grid-outline', color: '#64748b', bg: 'rgba(100, 116, 139, 0.12)' };
 };
 
-const UNIT_PRESETS = ['1 kg', '500 g', '250 g', '1 pc', '1 plate', '1 packet', '1 litre', '1 dozen'];
 const STOCK_PRESETS = ['10', '25', '50', '100', '200'];
 
 export const AddProductScreen = ({ navigation, route }) => {
@@ -65,7 +65,7 @@ export const AddProductScreen = ({ navigation, route }) => {
   const editItem = route?.params?.product || route?.params?.item || null;
   const isEditing = Boolean(editItem);
 
-  const { addInventoryItem, updateInventoryItem, categories = [], fetchCategories, requestCategory, createCategory, vendor } = usePartner();
+  const { addInventoryItem, updateInventoryItem, uploadProductImage, categories = [], fetchCategories, requestCategory, createCategory, vendor } = usePartner();
 
   const displayCategories = Array.isArray(categories) ? categories : [];
 
@@ -75,12 +75,15 @@ export const AddProductScreen = ({ navigation, route }) => {
   const [selectedSubCategory, setSelectedSubCategory] = useState(editItem?.subCategory || '');
   const [price, setPrice] = useState(editItem?.price !== undefined ? String(editItem.price) : '');
   const [mrp, setMrp] = useState(editItem?.mrp !== undefined ? String(editItem.mrp) : '');
-  const [unit, setUnit] = useState(editItem?.unit || '1 kg');
+  const [unit, setUnit] = useState(editItem?.unit ? String(editItem.unit) : '');
   const [stock, setStock] = useState(
     editItem?.stock !== undefined ? String(editItem.stock) : editItem?.stockQty !== undefined ? String(editItem.stockQty) : '50'
   );
   const [description, setDescription] = useState(editItem?.description || '');
   const [imageUrl, setImageUrl] = useState(editItem?.image || '');
+  const [previewUri, setPreviewUri] = useState(editItem?.image || '');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
   const [isVeg, setIsVeg] = useState(editItem?.isVeg !== undefined ? editItem.isVeg : true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -137,6 +140,73 @@ export const AddProductScreen = ({ navigation, route }) => {
 
   const currentCategory = displayCategories.find((c) => (c._id || c.id) === selectedCatId);
   const availableSubCategories = Array.isArray(currentCategory?.subCategories) ? currentCategory.subCategories : [];
+
+  const isFoodCategory = Boolean(
+    currentCategory?.type === 'FOOD' ||
+    vendor?.storeType === 'HOME_CHEF' ||
+    (currentCategory?.name && /(food|meal|thali|restro|snack|bakery|mithai|sweet|dairy|egg|meat|chicken)/i.test(currentCategory.name))
+  );
+
+  const handlePickImage = async () => {
+    setUploadError(null);
+    try {
+      if (Platform.OS !== 'web') {
+        const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          if (!canAskAgain) {
+            showAlert(
+              'Photo Permission Required',
+              'Photo library access is disabled. Please open device Settings to allow photo selection.'
+            );
+          } else {
+            showAlert('Permission Denied', 'Please grant photo library access to choose a product picture.');
+          }
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+        selectionLimit: 1
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setPreviewUri(asset.uri);
+      setIsUploadingImage(true);
+
+      if (uploadProductImage) {
+        const uploadRes = await uploadProductImage(asset);
+        if (uploadRes && uploadRes.success) {
+          const finalPath = uploadRes.path || uploadRes.url;
+          setImageUrl(finalPath);
+          setPreviewUri(uploadRes.url || finalPath);
+          setUploadError(null);
+        } else {
+          setUploadError(uploadRes?.message || 'Failed to upload photo. Tap retry.');
+        }
+      } else {
+        setImageUrl(asset.uri);
+      }
+    } catch (err) {
+      console.warn('Image picker error:', err);
+      setUploadError('Could not open photo picker. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl('');
+    setPreviewUri('');
+    setUploadError(null);
+  };
 
   const numPrice = parseFloat(price);
   const numMrp = parseFloat(mrp);
@@ -205,6 +275,10 @@ export const AddProductScreen = ({ navigation, route }) => {
   };
 
   const handleSubmit = async () => {
+    if (isUploadingImage) {
+      showFeedback('Upload in Progress', 'Please wait for your product photo to finish uploading.');
+      return;
+    }
     if (!name.trim()) {
       showFeedback('Validation Error', 'Please enter a product title.');
       return;
@@ -213,12 +287,29 @@ export const AddProductScreen = ({ navigation, route }) => {
       showFeedback('Validation Error', 'Please select a valid store category from the database.');
       return;
     }
-    if (!price || isNaN(price) || Number(price) <= 0) {
-      showFeedback('Validation Error', 'Please enter a valid selling price.');
+    const parsedPrice = parseFloat(price);
+    if (!price || isNaN(parsedPrice) || parsedPrice <= 0) {
+      showFeedback('Validation Error', 'Please enter a valid selling price greater than ₹0.');
       return;
     }
-    if (!stock || isNaN(stock) || Number(stock) < 0) {
-      showFeedback('Validation Error', 'Please enter valid stock available.');
+    const parsedMrp = mrp && mrp.trim() ? parseFloat(mrp) : parsedPrice;
+    if (mrp && mrp.trim()) {
+      if (isNaN(parsedMrp) || parsedMrp < 0) {
+        showFeedback('Validation Error', 'MRP must be a valid non-negative number.');
+        return;
+      }
+      if (parsedMrp < parsedPrice) {
+        showFeedback('Validation Error', `MRP (₹${mrp}) cannot be lower than the selling price (₹${price}).`);
+        return;
+      }
+    }
+    const parsedStock = parseInt(stock, 10);
+    if (!stock || isNaN(parsedStock) || parsedStock < 0) {
+      showFeedback('Validation Error', 'Please enter a valid available stock count (e.g. 25).');
+      return;
+    }
+    if (!unit.trim()) {
+      showFeedback('Validation Error', 'Please enter the pack size / unit of sale (e.g. 500 g, 1 kg, 1 dozen).');
       return;
     }
 
@@ -229,16 +320,17 @@ export const AddProductScreen = ({ navigation, route }) => {
         categoryId: selectedCatId,
         category: selectedCatId,
         subCategory: selectedSubCategory || '',
-        price: Number(price),
-        mrp: numMrp && numMrp > 0 ? Number(numMrp) : Number(price),
-        unit: unit.trim() || '1 kg',
-        stock: Number(stock),
-        stockQty: Number(stock),
+        price: parsedPrice,
+        mrp: parsedMrp,
+        unit: unit.trim(),
+        stock: parsedStock,
+        stockQty: parsedStock,
         description: description.trim(),
         image:
           imageUrl.trim() ||
+          previewUri.trim() ||
           'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80',
-        isVeg: isVeg
+        isVeg: isFoodCategory ? isVeg : true
       };
 
       let res;
@@ -528,6 +620,12 @@ export const AddProductScreen = ({ navigation, route }) => {
                 />
               </View>
             </View>
+            {numMrp > 0 && numPrice > 0 && numMrp < numPrice && (
+              <View style={styles.errorPill}>
+                <Ionicons name="alert-circle" size={13} color="#ef4444" />
+                <Text style={styles.errorPillText}>MRP (₹{mrp}) cannot be lower than selling price (₹{price})</Text>
+              </View>
+            )}
             {discountPercent > 0 && (
               <View style={styles.discountBadge}>
                 <Ionicons name="pricetag" size={12} color="#16a34a" />
@@ -535,27 +633,26 @@ export const AddProductScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* Unit Selector */}
+            {/* Pack Size / Unit */}
             <View style={styles.inputGroup}>
-              <Text style={styles.fieldLabel}>Unit of Sale</Text>
-              <View style={styles.pillsWrap}>
-                {UNIT_PRESETS.map((u) => (
-                  <TouchableOpacity
-                    key={u}
-                    style={[styles.presetPill, unit === u && styles.presetPillActive]}
-                    onPress={() => setUnit(u)}
-                  >
-                    <Text style={[styles.presetPillText, unit === u && styles.presetPillTextActive]}>
-                      {u}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <Text style={styles.fieldLabel}>Pack Size / Unit *</Text>
+              <TextInput
+                style={styles.glassInput}
+                value={unit}
+                onChangeText={setUnit}
+                placeholder="e.g. 10 kg, 10 litre, 10 packets, 750 g"
+                placeholderTextColor={colors.textMuted}
+                autoCorrect={false}
+                spellCheck={false}
+                maxLength={50}
+                returnKeyType="next"
+              />
             </View>
 
-            {/* Initial Stock */}
+            {/* Initial Stock / Inventory Count */}
             <View style={styles.inputGroup}>
-              <Text style={styles.fieldLabel}>Initial Stock Available *</Text>
+              <Text style={styles.fieldLabel}>Available Inventory (Total Packs) *</Text>
+              <Text style={styles.fieldHelper}>How many packs you have ready to sell (e.g. 30 packs)</Text>
               <View style={styles.pillsWrap}>
                 {STOCK_PRESETS.map((s) => (
                   <TouchableOpacity
@@ -564,46 +661,110 @@ export const AddProductScreen = ({ navigation, route }) => {
                     onPress={() => setStock(s)}
                   >
                     <Text style={[styles.presetPillText, stock === s && styles.presetPillTextActive]}>
-                      {s} units
+                      {s} packs
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-
-            {/* Veg / Non-Veg Toggle */}
-            <View style={styles.switchRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[styles.vegDot, { backgroundColor: isVeg ? '#16a34a' : '#dc2626' }]} />
-                <Text style={styles.switchLabel}>
-                  {isVeg ? 'Vegetarian Item' : 'Non-Vegetarian Item'}
-                </Text>
-              </View>
-              <Switch
-                value={isVeg}
-                onValueChange={setIsVeg}
-                trackColor={{ false: '#fca5a5', true: '#bbf7d0' }}
-                thumbColor={isVeg ? '#16a34a' : '#dc2626'}
-              />
-            </View>
-
-            {/* Image Preview & URL */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.fieldLabel}>Product Image URL (Optional)</Text>
               <TextInput
-                style={styles.glassInput}
-                value={imageUrl}
-                onChangeText={setImageUrl}
-                placeholder="https://images.unsplash.com/..."
+                style={[styles.glassInput, { marginTop: 8 }]}
+                value={stock}
+                onChangeText={setStock}
+                placeholder="Or type custom pack count (e.g. 30, 45, 120)"
                 placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
+                keyboardType="numeric"
                 autoCorrect={false}
                 spellCheck={false}
-                returnKeyType="next"
               />
-              {imageUrl ? (
-                <View style={styles.imagePreviewWrap}>
-                  <Image source={{ uri: imageUrl }} style={styles.imagePreview} />
+            </View>
+
+            {/* Veg / Non-Veg Toggle (Food Categories only) */}
+            {isFoodCategory && (
+              <View style={styles.switchRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={[styles.vegDot, { backgroundColor: isVeg ? '#16a34a' : '#dc2626' }]} />
+                  <Text style={styles.switchLabel}>
+                    {isVeg ? 'Vegetarian Item' : 'Non-Vegetarian Item'}
+                  </Text>
+                </View>
+                <Switch
+                  value={isVeg}
+                  onValueChange={setIsVeg}
+                  trackColor={{ false: '#fca5a5', true: '#bbf7d0' }}
+                  thumbColor={isVeg ? '#16a34a' : '#dc2626'}
+                />
+              </View>
+            )}
+
+            {/* Real Device Image Upload */}
+            <View style={styles.inputGroup}>
+              <View style={styles.fieldLabelRow}>
+                <Ionicons name="camera-outline" size={15} color="#ea580c" />
+                <Text style={styles.fieldLabel}>Product Photo</Text>
+              </View>
+              <Text style={styles.fieldHelper}>Choose a photo from your device (JPG, PNG, WEBP up to 5 MB)</Text>
+
+              {previewUri ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: previewUri }} style={styles.imagePreviewLarge} resizeMode="cover" />
+                  <View style={styles.imageOverlayActions}>
+                    <TouchableOpacity
+                      style={styles.imageActionBtn}
+                      onPress={handlePickImage}
+                      disabled={isUploadingImage}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="refresh-outline" size={15} color="#0f172a" />
+                      <Text style={styles.imageActionBtnText}>Replace Photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.imageActionBtn, styles.imageRemoveBtn]}
+                      onPress={handleRemoveImage}
+                      disabled={isUploadingImage}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="trash-outline" size={15} color="#ef4444" />
+                      <Text style={[styles.imageActionBtnText, { color: '#ef4444' }]}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {isUploadingImage && (
+                    <View style={styles.uploadingOverlay}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                      <Text style={styles.uploadingText}>Uploading photo...</Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.uploadDropZone}
+                  onPress={handlePickImage}
+                  disabled={isUploadingImage}
+                  activeOpacity={0.8}
+                >
+                  {isUploadingImage ? (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color="#ea580c" />
+                      <Text style={styles.uploadDropZoneSub}>Uploading photo from device...</Text>
+                    </View>
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <View style={styles.uploadDropZoneIconWrap}>
+                        <Ionicons name="image-outline" size={26} color="#ea580c" />
+                      </View>
+                      <Text style={styles.uploadDropZoneTitle}>Choose Photo from Device</Text>
+                      <Text style={styles.uploadDropZoneSub}>Tap to select from phone gallery or computer</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {uploadError ? (
+                <View style={styles.uploadErrorBox}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#ef4444" />
+                  <Text style={styles.uploadErrorText}>{uploadError}</Text>
+                  <TouchableOpacity onPress={handlePickImage} style={styles.uploadRetryBtn}>
+                    <Text style={styles.uploadRetryText}>Retry</Text>
+                  </TouchableOpacity>
                 </View>
               ) : null}
             </View>
@@ -955,7 +1116,7 @@ export const InventoryScreen = ({ navigation }) => {
                       {item.name}
                     </Text>
                     <Text style={styles.invPrice}>
-                      ₹{item.price} <Text style={styles.invUnit}>/ {item.unit || '1 kg'}</Text>
+                      ₹{item.price} <Text style={styles.invUnit}>/ {item.unit || 'pack'}</Text>
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                       <Text
@@ -964,7 +1125,7 @@ export const InventoryScreen = ({ navigation }) => {
                           { color: stockQty > 0 ? '#16a34a' : '#dc2626' }
                         ]}
                       >
-                        Stock: {stockQty} {item.unit || 'units'}
+                        Stock: {stockQty} packs ({item.unit || 'pack'})
                       </Text>
                       {item.subCategory ? (
                         <View style={styles.subCatBadge}>
@@ -1415,6 +1576,128 @@ const styles = StyleSheet.create({
   publishBtnText: {
     fontSize: 15,
     fontWeight: '800',
+    color: '#ffffff'
+  },
+  errorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 6
+  },
+  errorPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#b91c1c'
+  },
+  imagePreviewContainer: {
+    marginTop: 8,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    backgroundColor: '#f8fafc',
+    position: 'relative'
+  },
+  imagePreviewLarge: {
+    width: '100%',
+    height: 160,
+    backgroundColor: '#f1f5f9'
+  },
+  imageOverlayActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0'
+  },
+  imageActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9'
+  },
+  imageActionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a'
+  },
+  imageRemoveBtn: {
+    backgroundColor: '#fee2e2'
+  },
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
+  },
+  uploadingText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff'
+  },
+  uploadDropZone: {
+    marginTop: 8,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  uploadDropZoneIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(234, 88, 12, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  uploadDropZoneTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a'
+  },
+  uploadDropZoneSub: {
+    fontSize: 12,
+    color: '#64748b'
+  },
+  uploadErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8
+  },
+  uploadErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#b91c1c',
+    fontWeight: '500'
+  },
+  uploadRetryBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#dc2626'
+  },
+  uploadRetryText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#ffffff'
   },
 

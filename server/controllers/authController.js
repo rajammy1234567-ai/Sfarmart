@@ -707,6 +707,237 @@ export const customerLogin = async (req, res) => {
 };
 
 /**
+ * POST /api/auth/vendor/register
+ * Public registration for partner shop owner.
+ * Creates an unapproved, inactive Vendor record pending admin verification.
+ */
+export const registerVendor = async (req, res) => {
+  try {
+    const {
+      ownerName,
+      phone,
+      password,
+      storeName,
+      storeType,
+      address,
+      coordinates
+    } = req.body || {};
+
+    // 1. Validate Owner Name
+    const cleanOwnerName = typeof ownerName === 'string' ? ownerName.trim() : '';
+    if (!cleanOwnerName || cleanOwnerName.length < 2) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_OWNER_NAME',
+        message: 'Owner name must be at least 2 characters.'
+      });
+    }
+
+    // 2. Validate & Normalize Phone Number
+    let cleanPhone = String(phone || '').trim().replace(/[\s-]/g, '');
+    if (cleanPhone.startsWith('+91')) {
+      cleanPhone = cleanPhone.slice(3);
+    } else if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+      cleanPhone = cleanPhone.slice(2);
+    } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+      cleanPhone = cleanPhone.slice(1);
+    }
+
+    if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_PHONE',
+        message: 'Please enter a valid 10-digit Indian phone number.'
+      });
+    }
+
+    // 3. Validate Password
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_PASSWORD',
+        message: 'Password must be at least 6 characters long.'
+      });
+    }
+
+    // 4. Validate Store Name
+    const cleanStoreName = typeof storeName === 'string' ? storeName.trim() : '';
+    if (!cleanStoreName || cleanStoreName.length < 2) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_STORE_NAME',
+        message: 'Shop name must be at least 2 characters.'
+      });
+    }
+
+    // 5. Validate Store Type
+    const validStoreTypes = ['FARMER', 'HOME_CHEF', 'KIRANA', 'DAIRY', 'BAKERY'];
+    const cleanStoreType = typeof storeType === 'string' ? storeType.trim().toUpperCase() : '';
+    if (!validStoreTypes.includes(cleanStoreType)) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_STORE_TYPE',
+        message: `Store type must be one of: ${validStoreTypes.join(', ')}.`
+      });
+    }
+
+    // 6. Validate Address
+    if (!address || typeof address !== 'object') {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_ADDRESS',
+        message: 'Shop address details are required.'
+      });
+    }
+
+    const cleanLine1 = typeof address.line1 === 'string' ? address.line1.trim() : '';
+    if (!cleanLine1 || cleanLine1.length < 3) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_ADDRESS_LINE',
+        message: 'Please provide a valid shop street address / premise.'
+      });
+    }
+
+    const cleanPincode = typeof address.pincode === 'string' ? address.pincode.trim() : String(address.pincode || '').trim();
+    if (!/^\d{6}$/.test(cleanPincode)) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_PINCODE',
+        message: 'Please enter a valid 6-digit postal pincode.'
+      });
+    }
+
+    const cleanCity = typeof address.city === 'string' ? address.city.trim() : 'Ludhiana';
+    const cleanState = typeof address.state === 'string' ? address.state.trim() : 'Punjab';
+
+    // 7. Extract & Validate Coordinates
+    let lat = null;
+    let lng = null;
+
+    if (Array.isArray(coordinates) && coordinates.length >= 2) {
+      lng = Number(coordinates[0]);
+      lat = Number(coordinates[1]);
+    } else if (Array.isArray(address?.location?.coordinates) && address.location.coordinates.length >= 2) {
+      lng = Number(address.location.coordinates[0]);
+      lat = Number(address.location.coordinates[1]);
+    } else if (address?.lat !== undefined && address?.lng !== undefined) {
+      lat = Number(address.lat);
+      lng = Number(address.lng);
+    } else if (req.body?.latitude !== undefined && req.body?.longitude !== undefined) {
+      lat = Number(req.body.latitude);
+      lng = Number(req.body.longitude);
+    } else if (req.body?.lat !== undefined && req.body?.lng !== undefined) {
+      lat = Number(req.body.lat);
+      lng = Number(req.body.lng);
+    }
+
+    if (
+      lat === null ||
+      lng === null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_COORDINATES',
+        message: 'Please confirm valid shop coordinates on the map.'
+      });
+    }
+
+    // 8. Check for duplicate phone
+    const existingVendor = await Vendor.findOne({ phone: cleanPhone });
+    if (existingVendor) {
+      return res.status(409).json({
+        ok: false,
+        success: false,
+        code: 'PHONE_ALREADY_REGISTERED',
+        message: 'This mobile number is already registered as a partner store.'
+      });
+    }
+
+    // 9. Hash Password & Create Vendor
+    // Strict allowlisting: isApproved, isActive, isOpen are false
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const vendor = await Vendor.create({
+      storeName: cleanStoreName,
+      ownerName: cleanOwnerName,
+      phone: cleanPhone,
+      passwordHash,
+      storeType: cleanStoreType,
+      address: {
+        line1: cleanLine1,
+        city: cleanCity,
+        state: cleanState,
+        pincode: cleanPincode,
+        location: {
+          type: 'Point',
+          coordinates: [lng, lat] // [longitude, latitude] GeoJSON standard
+        }
+      },
+      isApproved: false,
+      isActive: false,
+      isOpen: false,
+      avgPrepTimeMins: 25,
+      deliveryRadiusKm: 7,
+      minOrderValue: 99,
+      rating: 5.0,
+      totalOrders: 0
+    });
+
+    return res.status(201).json({
+      ok: true,
+      success: true,
+      code: 'REGISTRATION_PENDING_APPROVAL',
+      message: 'Partner registration submitted successfully. Your store account is pending admin approval before you can log in.',
+      vendor: {
+        _id: vendor._id,
+        id: vendor._id,
+        storeName: vendor.storeName,
+        ownerName: vendor.ownerName,
+        phone: vendor.phone,
+        storeType: vendor.storeType,
+        address: vendor.address,
+        isApproved: false,
+        isActive: false,
+        isOpen: false,
+        createdAt: vendor.createdAt
+      }
+    });
+  } catch (err) {
+    if (err.code === 11000 || (err.name === 'MongoServerError' && err.code === 11000)) {
+      return res.status(409).json({
+        ok: false,
+        success: false,
+        code: 'PHONE_ALREADY_REGISTERED',
+        message: 'This mobile number is already registered as a partner store.'
+      });
+    }
+    console.error('registerVendor error:', err);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      code: 'REGISTRATION_FAILED',
+      message: 'Failed to complete partner registration. Please try again.'
+    });
+  }
+};
+
+/**
  * POST /api/auth/vendor/login (Backward compatibility for partnerApp)
  */
 export const vendorLogin = async (req, res) => {

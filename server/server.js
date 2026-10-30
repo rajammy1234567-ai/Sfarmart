@@ -60,6 +60,7 @@ import userRoutes from './routes/userRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import riderRoutes from './routes/riderRoutes.js';
+import uploadRoutes from './routes/uploadRoutes.js';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -214,6 +215,7 @@ app.get('/api/health', (req, res) => {
 // Login limiters on actual routes
 app.use('/api/auth/customer/login', loginLimiter);
 app.use('/api/auth/vendor/login', loginLimiter);
+app.use('/api/auth/vendor/register', loginLimiter);
 app.use('/api/rider/auth/login', loginLimiter);
 app.use('/api/auth/refresh', loginLimiter);
 app.use('/api/rider/auth/refresh', loginLimiter);
@@ -237,6 +239,7 @@ app.use('/api/rider', riderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', categoryRoutes);
 app.use('/api', vendorRoutes);
+app.use('/api', uploadRoutes);
 app.use('/api', productRoutes);
 app.use('/api', orderRoutes);
 app.use('/api', paymentRoutes);

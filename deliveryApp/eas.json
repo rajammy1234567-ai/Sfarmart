@@ -14,7 +14,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://farm-mart-api.onrender.com/api",
+        "EXPO_PUBLIC_API_URL": "https://farmart-backend-staging.onrender.com/api",
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     },
@@ -25,7 +25,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://farmart-backend-staging.onrender.com/api"
+        "EXPO_PUBLIC_API_URL": "https://farmart-backend-staging.onrender.com/api",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     },
     "production": {
@@ -34,7 +35,6 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://farm-mart-api.onrender.com/api",
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUQP8zj6lm0imfbF9Gpn5hFKcB85r__i8"
       }
     }

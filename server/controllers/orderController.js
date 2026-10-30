@@ -169,7 +169,7 @@ export const createOrder = async (req, res) => {
     const vendorDoc = dbProducts[0].vendor;
 
     // 5. Check if vendor is open – moved before address validation to prioritize VENDOR_CLOSED error
-    if (!vendorDoc.isOpen) {
+    if (!vendorDoc.isActive || !vendorDoc.isApproved || !vendorDoc.isOpen) {
       // Vendor is closed; reject order creation early
       return res.status(400).json({
         success: false,
@@ -324,11 +324,29 @@ export const createOrder = async (req, res) => {
           productsToNotify.push(updatedProduct);
         }
 
+        const pickupSnapshot = {
+          vendorId: vendorDoc._id,
+          storeName: vendorDoc.storeName || 'Merchant Partner',
+          phone: vendorDoc.phone || '',
+          line1: vendorDoc.address?.line1 || '',
+          city: vendorDoc.address?.city || '',
+          pincode: vendorDoc.address?.pincode || '',
+          location: {
+            type: 'Point',
+            coordinates: Array.isArray(vendorDoc.address?.location?.coordinates) && vendorDoc.address.location.coordinates.length >= 2
+              ? [Number(vendorDoc.address.location.coordinates[0]), Number(vendorDoc.address.location.coordinates[1])]
+              : (Array.isArray(vendorDoc.location?.coordinates) && vendorDoc.location.coordinates.length >= 2
+                  ? [Number(vendorDoc.location.coordinates[0]), Number(vendorDoc.location.coordinates[1])]
+                  : [0, 0])
+          }
+        };
+
         const newOrder = new Order({
           orderNumber,
           clientOrderId: normalizedClientOrderId || undefined,
           customer: customerId,
           vendor: singleVendorId,
+          pickupAddress: pickupSnapshot,
           items: orderItems,
           pricing: {
             itemsTotal,
@@ -578,7 +596,7 @@ export const getDeliveryOrders = async (req, res) => {
       .select('-pickupOtp -deliveryOtp -deliveryRoute -address.phone -customer')
       .populate('vendor', 'storeName address phone').sort({ createdAt: 1 }).limit(100);
     const point = { lat: rider.currentLocation?.coordinates?.[1], lng: rider.currentLocation?.coordinates?.[0] };
-    const orders = candidates.filter(o => distanceKm(point, storePoint(o.vendor)) <= 8);
+    const orders = candidates.filter(o => distanceKm(point, storePoint(o.pickupAddress || o.vendor)) <= 8);
     res.json({ success: true, count: orders.length, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server Error', error });
