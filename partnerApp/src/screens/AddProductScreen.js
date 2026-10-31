@@ -1260,7 +1260,11 @@ export const SettlementsScreen = () => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width > 600;
-  const { stats } = usePartner();
+  const { stats, orders, vendor } = usePartner();
+
+  const completedOrders = (orders || []).filter(
+    (o) => o.status === 'DELIVERED'
+  );
 
   return (
     <View style={styles.container}>
@@ -1268,7 +1272,7 @@ export const SettlementsScreen = () => {
       <WaterBackground />
 
       <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20) + 10 }]}>
-        <Text style={styles.headerBarTitle}>Wednesday Settlements</Text>
+        <Text style={styles.headerBarTitle}>Merchant Ledger & Reports</Text>
       </View>
 
       <ScrollView
@@ -1283,49 +1287,83 @@ export const SettlementsScreen = () => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Upcoming Wednesday Payout Hero Card */}
+        {/* Real Revenue & Performance Hero Card */}
         <GlassCard style={styles.wedHeroCard} showSheen={true} tint="green">
           <View style={styles.wedHeroRow}>
             <View style={styles.wedIconOrb}>
-              <Ionicons name="calendar-outline" size={26} color="#16a34a" />
+              <Ionicons name="wallet-outline" size={26} color="#16a34a" />
             </View>
             <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.wedHeroTitle}>Upcoming Wednesday Payout</Text>
+              <Text style={styles.wedHeroTitle}>Today's Delivered Revenue</Text>
               <Text style={styles.wedHeroAmount}>
-                ₹{stats.todaySales ? stats.todaySales + 1250 : 1850}
+                ₹{stats.todaySales || 0}
               </Text>
               <View style={styles.bankDirectTag}>
                 <Ionicons name="checkmark-circle" size={13} color="#15803d" />
-                <Text style={styles.bankDirectText}>Direct Transfer to SBI A/c (*4321)</Text>
+                <Text style={styles.bankDirectText}>
+                  {vendor?.storeName || 'Merchant Store'} • {stats.todayDeliveredCount || completedOrders.length} Delivered Today
+                </Text>
               </View>
             </View>
           </View>
         </GlassCard>
 
-        {/* Previous Weekly Payouts Ledger */}
-        <Text style={styles.sectionHeaderTitle}>Previous Weekly Payouts</Text>
-        {[
-          { date: 'Wednesday, Sep 10, 2026', total: 4280, status: 'PAID TO BANK', ref: 'FARM-PAY-88231' },
-          { date: 'Wednesday, Sep 03, 2026', total: 3950, status: 'PAID TO BANK', ref: 'FARM-PAY-87109' },
-          { date: 'Wednesday, Aug 27, 2026', total: 5120, status: 'PAID TO BANK', ref: 'FARM-PAY-86043' }
-        ].map((item, idx) => (
-          <GlassCard key={idx} style={styles.settleCard} showSheen={false}>
-            <View style={styles.settleRowTop}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="arrow-down-circle" size={20} color="#16a34a" />
-                <Text style={styles.settleDate}>{item.date}</Text>
-              </View>
-              <Text style={styles.settleAmount}>+₹{item.total}</Text>
-            </View>
-
-            <View style={styles.settleRowBottom}>
-              <View style={styles.settleStatusBadge}>
-                <Text style={styles.settleStatusText}>{item.status}</Text>
-              </View>
-              <Text style={styles.settleRefText}>Ref: {item.ref}</Text>
-            </View>
+        {/* Real Stats Metrics Grid */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          <GlassCard style={{ flex: 1, padding: 14, alignItems: 'center' }}>
+            <Ionicons name="receipt-outline" size={20} color="#0284c7" />
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4, fontWeight: '700' }}>Today's Orders</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 2 }}>{stats.todayOrdersCount || 0}</Text>
           </GlassCard>
-        ))}
+          <GlassCard style={{ flex: 1, padding: 14, alignItems: 'center' }}>
+            <Ionicons name="checkmark-done-circle-outline" size={20} color="#16a34a" />
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4, fontWeight: '700' }}>Lifetime Completed</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 2 }}>{stats.allTimeDelivered || completedOrders.length || 0}</Text>
+          </GlassCard>
+        </View>
+
+        {/* Completed Orders Transaction History */}
+        <Text style={styles.sectionHeaderTitle}>Completed Order Ledger</Text>
+        {completedOrders.length === 0 ? (
+          <GlassCard style={[styles.settleCard, { padding: 24, alignItems: 'center', justifyContent: 'center' }]}>
+            <Ionicons name="document-text-outline" size={40} color="#94a3b8" />
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a', marginTop: 8 }}>
+              No completed orders yet
+            </Text>
+            <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 4, lineHeight: 18 }}>
+              Delivered customer orders and their settlement revenue will be recorded here in real-time.
+            </Text>
+          </GlassCard>
+        ) : (
+          completedOrders.map((item, idx) => {
+            const orderNum = item.orderNumber || item._id?.slice(-6) || `ORD-${idx + 1}`;
+            const total = item.pricing?.grandTotal ?? item.totalAmount ?? 0;
+            const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent';
+            return (
+              <GlassCard key={item._id || idx} style={styles.settleCard} showSheen={false}>
+                <View style={styles.settleRowTop}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <Ionicons name="checkmark-circle" size={20} color="#16a34a" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settleDate}>Order #{orderNum}</Text>
+                      <Text style={{ fontSize: 11, color: '#64748b' }}>{dateStr}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.settleAmount}>+₹{total}</Text>
+                </View>
+
+                <View style={styles.settleRowBottom}>
+                  <View style={styles.settleStatusBadge}>
+                    <Text style={styles.settleStatusText}>DELIVERED</Text>
+                  </View>
+                  <Text style={styles.settleRefText}>
+                    {item.items?.length || 1} item(s) • {item.paymentMethod || 'Online'}
+                  </Text>
+                </View>
+              </GlassCard>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );

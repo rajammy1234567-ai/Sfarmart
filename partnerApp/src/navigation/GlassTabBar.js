@@ -51,7 +51,7 @@ const TabItem = ({ route, isFocused, onPress, onLongPress }) => {
           // Floating Glossy Glass Orb with Glow
           <View style={styles.activeOrbWrapper}>
             <LinearGradient
-              colors={['#ea580c', '#d97706']}
+              colors={['#16a34a', '#d97706']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.activeOrb}

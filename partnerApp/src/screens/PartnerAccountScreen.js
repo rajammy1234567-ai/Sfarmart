@@ -24,7 +24,7 @@ export const PartnerAccountScreen = () => {
   const { width } = useWindowDimensions();
   const isTablet = width > 600;
 
-  const { vendor, token, logoutVendor } = usePartner();
+  const { vendor, token, logoutVendor, stats } = usePartner();
 
   const [pickupLat,setPickupLat]=useState(String(vendor?.address?.location?.coordinates?.[1] ?? ''));
   const [pickupLng,setPickupLng]=useState(String(vendor?.address?.location?.coordinates?.[0] ?? ''));
@@ -144,18 +144,15 @@ export const PartnerAccountScreen = () => {
             <View style={styles.metricDivider} />
 
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Customer Rating</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Ionicons name="star" size={14} color="#f59e0b" />
-                <Text style={styles.metricValue}>{vendor?.rating || '4.9'} ★</Text>
-              </View>
+              <Text style={styles.metricLabel}>Today's Orders</Text>
+              <Text style={styles.metricValue}>{stats?.todayOrdersCount || 0}</Text>
             </View>
 
             <View style={styles.metricDivider} />
 
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Orders Fulfilled</Text>
-              <Text style={styles.metricValue}>180+ orders</Text>
+              <Text style={styles.metricLabel}>Total Delivered</Text>
+              <Text style={styles.metricValue}>{stats?.allTimeDelivered || 0}</Text>
             </View>
           </View>
         </GlassCard>
@@ -197,12 +194,53 @@ export const PartnerAccountScreen = () => {
         </GlassCard>
 
         <GlassCard style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Store entrance pin</Text>
-          <Text style={{marginVertical:10}}>Copy the coordinates of your entrance from Google Maps. Riders use this pin for pickup.</Text>
-          <TextInput accessibilityLabel="Store latitude" value={pickupLat} onChangeText={setPickupLat} placeholder="Latitude" style={{padding:12,borderWidth:1,borderColor:'#cbd5e1',marginVertical:5}}/>
-          <TextInput accessibilityLabel="Store longitude" value={pickupLng} onChangeText={setPickupLng} placeholder="Longitude" style={{padding:12,borderWidth:1,borderColor:'#cbd5e1',marginVertical:5}}/>
-          <TouchableOpacity disabled={savingPin} onPress={savePin}><Text style={{padding:12,color:'#15803d',fontWeight:'700'}}>{savingPin?'Saving...':'Save pickup pin'}</Text></TouchableOpacity>
-          <TouchableOpacity onPress={()=>Linking.openURL('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(pickupLat+','+pickupLng)).catch(()=>{})}><Text style={{padding:12,color:'#0284c7'}}>Preview in Google Maps</Text></TouchableOpacity>
+          <View style={styles.cardHeaderRow}>
+            <View style={[styles.sectionIconOrb, { backgroundColor: 'rgba(22, 163, 74, 0.12)' }]}>
+              <Ionicons name="pin-outline" size={18} color="#16a34a" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.sectionTitle}>Store Entrance GPS Pin</Text>
+              <Text style={styles.sectionSubtitle}>Assigned pickup coordinate for delivery riders</Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: 12, color: '#64748b', marginVertical: 8, lineHeight: 18 }}>
+            Enter your exact entrance coordinates. Assigned riders navigate to this pin for quick order handover.
+          </Text>
+          <View style={{ gap: 8, marginVertical: 6 }}>
+            <TextInput
+              accessibilityLabel="Store latitude"
+              value={pickupLat}
+              onChangeText={setPickupLat}
+              placeholder="Latitude (e.g. 28.6139)"
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              style={{ paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#ffffff', fontSize: 13, color: '#0f172a' }}
+            />
+            <TextInput
+              accessibilityLabel="Store longitude"
+              value={pickupLng}
+              onChangeText={setPickupLng}
+              placeholder="Longitude (e.g. 77.2090)"
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              style={{ paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#ffffff', fontSize: 13, color: '#0f172a' }}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+            <TouchableOpacity
+              disabled={savingPin}
+              onPress={savePin}
+              style={{ flex: 1, height: 48, backgroundColor: '#16a34a', borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>{savingPin ? 'Saving...' : 'Save Pickup Pin'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => Linking.openURL('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(pickupLat + ',' + pickupLng)).catch(() => {})}
+              style={{ height: 48, paddingHorizontal: 14, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}
+            >
+              <Ionicons name="map-outline" size={18} color="#0284c7" />
+            </TouchableOpacity>
+          </View>
         </GlassCard>
         {/* 3. Store Pickup & Location Address Card */}
         <GlassCard style={styles.sectionCard}>
@@ -219,47 +257,49 @@ export const PartnerAccountScreen = () => {
           <View style={styles.detailBox}>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Store Address</Text>
-              <Text style={styles.detailVal}>{vendor?.address?.line1 || 'Main Market Road, Model Town'}</Text>
+              <Text style={styles.detailVal}>{vendor?.address?.line1 || 'Address not specified'}</Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>City & Region</Text>
-              <Text style={styles.detailVal}>{vendor?.address?.city || 'Ludhiana'}, {vendor?.address?.state || 'Punjab'}</Text>
+              <Text style={styles.detailVal}>{vendor?.address?.city || 'City not specified'}{vendor?.address?.state ? `, ${vendor.address.state}` : ''}</Text>
             </View>
             <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
               <Text style={styles.detailLabel}>Postal Pincode</Text>
-              <Text style={styles.detailVal}>{vendor?.address?.pincode || '141001'}</Text>
+              <Text style={styles.detailVal}>{vendor?.address?.pincode || 'Pincode not specified'}</Text>
             </View>
           </View>
         </GlassCard>
 
-        {/* 4. Banking & Payout Settlement Info */}
+        {/* 4. Partner Verification & Settlement Status */}
         <GlassCard style={styles.sectionCard}>
           <View style={styles.cardHeaderRow}>
             <View style={[styles.sectionIconOrb, { backgroundColor: 'rgba(22, 163, 74, 0.12)' }]}>
-              <Ionicons name="wallet-outline" size={18} color="#16a34a" />
+              <Ionicons name="shield-checkmark-outline" size={18} color="#16a34a" />
             </View>
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.sectionTitle}>Banking & Weekly Settlements</Text>
-              <Text style={styles.sectionSubtitle}>Automated earnings payout account</Text>
+              <Text style={styles.sectionTitle}>Merchant Verification Status</Text>
+              <Text style={styles.sectionSubtitle}>Verified merchant credentials</Text>
             </View>
           </View>
 
           <View style={styles.detailBox}>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Payout Schedule</Text>
-              <Text style={styles.detailVal}>Every Wednesday (06:00 AM)</Text>
+              <Text style={styles.detailLabel}>Verification Status</Text>
+              <Text style={[styles.detailVal, { color: '#16a34a', fontWeight: '800' }]}>
+                {vendor?.isApproved ? 'Verified & Approved' : 'Pending Verification'}
+              </Text>
             </View>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Linked Bank</Text>
-              <Text style={styles.detailVal}>State Bank of India (SBI)</Text>
+              <Text style={styles.detailLabel}>Store Type</Text>
+              <Text style={styles.detailVal}>{vendor?.storeType || 'Local Merchant'}</Text>
             </View>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Account Number</Text>
-              <Text style={styles.detailVal}>•••• •••• 4321 (KYC Verified)</Text>
+              <Text style={styles.detailLabel}>Registered Owner</Text>
+              <Text style={styles.detailVal}>{vendor?.ownerName || 'Merchant'}</Text>
             </View>
             <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
-              <Text style={styles.detailLabel}>Settlement Mode</Text>
-              <Text style={styles.detailVal}>Direct NEFT / IMPS Transfer</Text>
+              <Text style={styles.detailLabel}>Account Role</Text>
+              <Text style={styles.detailVal}>VENDOR / STORE_OWNER</Text>
             </View>
           </View>
         </GlassCard>

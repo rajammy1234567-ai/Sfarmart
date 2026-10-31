@@ -34,6 +34,7 @@ export const PartnerLoginScreen = ({ navigation, onNavigateToRegister }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
   const loginPending = useRef(false);
 
   const handleLogin = async (overridePhone, overridePassword) => {
@@ -58,7 +59,13 @@ export const PartnerLoginScreen = ({ navigation, onNavigateToRegister }) => {
     try {
       const res = await loginVendor(targetPhone, targetPass);
       if (!res || !res.success) {
-        setErrorMessage(res?.message || 'Invalid credentials. Please check phone and password.');
+        if (res?.code === 'ACCOUNT_PENDING_APPROVAL') {
+          setIsPendingApproval(true);
+          setErrorMessage(res?.message || 'Your partner store application is pending approval from Farmart admin.');
+        } else {
+          setIsPendingApproval(false);
+          setErrorMessage(res?.message || 'Invalid credentials. Please check phone and password.');
+        }
       }
     } catch (err) {
       setErrorMessage('Network connection error. Please try again.');
@@ -105,7 +112,32 @@ export const PartnerLoginScreen = ({ navigation, onNavigateToRegister }) => {
             Sign in with your registered partner phone number and password.
           </Text>
 
-          {errorMessage ? (
+          {isPendingApproval ? (
+            <View style={styles.pendingCard} accessibilityRole="alert" accessibilityLiveRegion="polite">
+              <View style={styles.pendingHeaderRow}>
+                <Ionicons name="time-outline" size={22} color="#b45309" />
+                <Text style={styles.pendingTitle}>Application Under Review</Text>
+              </View>
+              <Text style={styles.pendingBody}>
+                Your store application has been safely received. S-farmart operations verifies each partner before account activation to guarantee authentic local produce and store safety.
+              </Text>
+              <View style={styles.pendingBadgeRow}>
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>Status: Pending Admin Approval</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.pendingRefreshBtn}
+                onPress={() => handleLogin()}
+                disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Check approval status"
+              >
+                <Ionicons name="refresh-outline" size={16} color="#b45309" style={{ marginRight: 6 }} />
+                <Text style={styles.pendingRefreshText}>Check Approval Status Again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : errorMessage ? (
             <View style={styles.errorBanner} accessibilityRole="alert" accessibilityLiveRegion="polite">
               <Ionicons name="alert-circle" size={18} color="#dc2626" />
               <Text style={styles.errorText}>{errorMessage}</Text>
@@ -266,6 +298,65 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 18
+  },
+  pendingCard: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(254, 243, 199, 0.85)',
+    borderWidth: 1.5,
+    borderColor: '#f59e0b',
+    marginBottom: 16
+  },
+  pendingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6
+  },
+  pendingTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#92400e'
+  },
+  pendingBody: {
+    fontSize: 12,
+    color: '#78350f',
+    lineHeight: 18,
+    marginBottom: 10
+  },
+  pendingBadgeRow: {
+    marginBottom: 10
+  },
+  pendingBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f59e0b'
+  },
+  pendingBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#b45309'
+  },
+  pendingRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d97706',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 44
+  },
+  pendingRefreshText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#b45309'
   },
   card: {
     padding: 20,

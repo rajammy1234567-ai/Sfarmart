@@ -241,14 +241,14 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                 </Text>
               </GlassCard>
 
-              {/* Tile 3: Store Rating */}
+              {/* Tile 3: Today's Orders */}
               <GlassCard style={styles.statTile}>
                 <View style={styles.statIconWrapGold}>
-                  <Ionicons name="star" size={18} color="#f59e0b" />
+                  <Ionicons name="basket-outline" size={18} color="#16a34a" />
                 </View>
-                <Text style={styles.statLabel} numberOfLines={1}>Store Rating</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>Today's Orders</Text>
                 <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-                  {vendor?.rating || '4.9'} ★
+                  <AnimatedNumber value={stats.todayOrdersCount || 0} />
                 </Text>
               </GlassCard>
             </View>
@@ -291,7 +291,7 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                   </View>
                   <View style={{ marginLeft: 10, flex: 1 }}>
                     <Text style={styles.actionBtnTitle}>Detailed Analytics</Text>
-                    <Text style={styles.actionBtnSub}>Wednesday payouts ledger</Text>
+                    <Text style={styles.actionBtnSub}>Real-time orders & ledger</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
                 </View>
@@ -329,8 +329,8 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                     const orderIdDisplay = `#${o.orderNumber || o._id?.slice(-6) || 'ORD-101'}`;
                     const itemCount = o.items?.length || 1;
                     const primaryItemName =
-                      o.items?.[0]?.product?.name || o.items?.[0]?.name || 'Special Menu Item';
-                    const grandTotal = o.pricing?.grandTotal || o.totalAmount || 180;
+                      o.items?.[0]?.product?.name || o.items?.[0]?.name || 'Order Items';
+                    const grandTotal = o.pricing?.grandTotal ?? o.totalAmount ?? 0;
                     const isProcessing = processingOrderId === o._id;
                     const custLat = o.address?.lat ?? o.deliveryAddress?.lat;
                     const custLng = o.address?.lng ?? o.deliveryAddress?.lng;
@@ -350,8 +350,20 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                               {primaryItemName}
                             </Text>
                             <Text style={styles.orderRowCustomer}>
-                              👤 {o.customer?.name || o.address?.name || 'Rajesh Kumar'}
+                              👤 {o.customer?.name || o.address?.name || 'Farmart Customer'}
                             </Text>
+                            {o.items && o.items.length > 0 && (
+                              <View style={{ marginTop: 4 }}>
+                                {o.items.slice(0, 3).map((item, itIdx) => (
+                                  <Text key={itIdx} style={styles.itemLineDetail} numberOfLines={1}>
+                                    • {item.quantity || 1}x {item.name || item.product?.name || 'Item'} {item.unit ? `(${item.unit})` : ''}
+                                  </Text>
+                                ))}
+                                {o.items.length > 3 && (
+                                  <Text style={styles.moreItemsText}>+{o.items.length - 3} more items</Text>
+                                )}
+                              </View>
+                            )}
                           </View>
 
                           {/* Order Price & Action */}
@@ -837,9 +849,23 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a'
   },
+  itemLineDetail: {
+    fontSize: 11.5,
+    color: '#475569',
+    lineHeight: 16
+  },
+  moreItemsText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#0284c7',
+    marginTop: 2
+  },
   acceptBlueBtn: {
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
     backgroundColor: '#2563eb',
     shadowColor: '#2563eb',
@@ -855,8 +881,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   prepOrangeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
     backgroundColor: '#ea580c'
   },
@@ -866,8 +895,11 @@ const styles = StyleSheet.create({
     color: '#ffffff'
   },
   readyGreenBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
     backgroundColor: '#16a34a'
   },
@@ -877,8 +909,11 @@ const styles = StyleSheet.create({
     color: '#ffffff'
   },
   deliverSlateBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
     backgroundColor: '#475569'
   },
