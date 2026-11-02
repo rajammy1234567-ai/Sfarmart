@@ -15,6 +15,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.sfarmart.userapp",
+      "versionCode": 1,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
