@@ -33,6 +33,11 @@
       "favicon": "./assets/favicon.png"
     },
     "owner": "sfarmart",
+    "extra": {
+      "eas": {
+        "projectId": "0ffe353f-1525-4796-afa4-071da4cbbc71"
+      }
+    },
     "plugins": [
       [
         "expo-location",
