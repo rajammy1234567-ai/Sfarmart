@@ -1,9 +1,15 @@
-// uploadRoutes.js – Routes for authenticating and serving durable product images
+// uploadRoutes.js – Routes for authenticating and serving durable product & shop images
 import express from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { verifyToken, requireRole } from '../middleware/auth.js';
-import { uploadProductImage, serveProductImage } from '../controllers/uploadController.js';
+import {
+  uploadProductImage,
+  serveProductImage,
+  uploadShopPhoto,
+  serveShopPhoto,
+  deleteShopPhoto
+} from '../controllers/uploadController.js';
 
 const router = express.Router();
 
@@ -30,8 +36,8 @@ const uploadLimiter = rateLimit({
 });
 
 // Route-scoped Cross-Origin-Resource-Policy middleware
-// Public product images must be embeddable across origins (partner web on 8082, customer web, etc.)
-// Helmet defaults to same-origin; this overrides CORP specifically for the public images route.
+// Public product and shop images must be embeddable across origins (partner web on 8082, customer web, etc.)
+// Helmet defaults to same-origin; this overrides CORP specifically for public image routes.
 const publicImageCorpMiddleware = (_req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
@@ -50,5 +56,25 @@ router.post(
 // Public serving endpoint for persistent product images
 router.get('/uploads/product-images/:id', publicImageCorpMiddleware, serveProductImage);
 
-export default router;
+// Authenticated vendor shop cover photo upload
+router.post(
+  '/uploads/shop-photo',
+  uploadLimiter,
+  verifyToken,
+  requireRole('VENDOR', 'ADMIN'),
+  upload.single('image'),
+  uploadShopPhoto
+);
 
+// Authenticated vendor shop cover photo deletion
+router.delete(
+  '/uploads/shop-photo',
+  verifyToken,
+  requireRole('VENDOR', 'ADMIN'),
+  deleteShopPhoto
+);
+
+// Public serving endpoint for persistent shop cover photos
+router.get('/uploads/shop-photos/:id', publicImageCorpMiddleware, serveShopPhoto);
+
+export default router;

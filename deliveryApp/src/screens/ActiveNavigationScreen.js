@@ -14,6 +14,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
 import { useDelivery } from '../context/DeliveryContext';
 import { shouldRecalculateRoute } from '../utils/trackingUtils';
 
@@ -218,7 +219,7 @@ export const ActiveNavigationScreen = ({ navigation }) => {
         </View>
 
         <TouchableOpacity onPress={refreshActiveOrder} style={styles.iconBtnCircle} activeOpacity={0.7}>
-          <Ionicons name="refresh" size={18} color="#0284c7" />
+          <Ionicons name="refresh" size={18} color="#16a34a" />
         </TouchableOpacity>
       </View>
 
@@ -298,7 +299,7 @@ export const ActiveNavigationScreen = ({ navigation }) => {
                         width: 28,
                         height: 28,
                         borderRadius: 14,
-                        backgroundColor: targetDestination.role === 'STORE' ? '#ea580c' : '#0284c7',
+                        backgroundColor: targetDestination.role === 'STORE' ? '#ea580c' : '#16a34a',
                         alignItems: 'center',
                         justifyContent: 'center',
                         borderWidth: 2,
@@ -328,7 +329,7 @@ export const ActiveNavigationScreen = ({ navigation }) => {
                       destination={{ latitude: targetDestination.lat, longitude: targetDestination.lng }}
                       apikey={apiKey}
                       strokeWidth={4}
-                      strokeColor="#0284c7"
+                      strokeColor="#16a34a"
                       mode="DRIVING"
                       onReady={(result) => {
                         setRouteInfo({ distance: result.distance, duration: result.duration });
@@ -363,7 +364,7 @@ export const ActiveNavigationScreen = ({ navigation }) => {
                 marginBottom: 10
               }}
             >
-              <Ionicons name="time" size={16} color="#0284c7" />
+              <Ionicons name="time" size={16} color="#16a34a" />
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#0369a1' }}>
                 {targetDestination.role === 'STORE' ? 'To Merchant: ' : 'To Doorstep: '}
                 {routeInfo.distance.toFixed(1)} km road route • ~{Math.ceil(routeInfo.duration)} mins away
@@ -395,22 +396,22 @@ export const ActiveNavigationScreen = ({ navigation }) => {
             <View style={styles.verticalLineWrap}>
               <View style={styles.verticalDashedLine} />
               <View style={styles.riderBeaconWrap}>
-                <Ionicons name="bicycle" size={14} color="#0284c7" />
+                <Ionicons name="bicycle" size={14} color="#16a34a" />
                 <Text style={styles.riderBeaconText}>{currentCoords ? 'GPS • '+Math.round(currentCoords.speed || 0)+' km/h' : 'Waiting for GPS'}</Text>
               </View>
             </View>
 
             {/* Customer Stop */}
             <View style={styles.stopRow}>
-              <View style={[styles.stopIconCircle, { backgroundColor: '#0284c7' }]}>
+              <View style={[styles.stopIconCircle, { backgroundColor: '#16a34a' }]}>
                 <Ionicons name="location" size={16} color="#ffffff" />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <View style={styles.stopTitleRow}>
-                  <Text style={[styles.stopRole, { color: '#0284c7' }]}>CUSTOMER DESTINATION</Text>
-                  <TouchableOpacity onPress={() => handleCall(customerPhone)} style={[styles.callSmallBtn, { borderColor: '#0284c7' }]}>
-                    <Ionicons name="call" size={12} color="#0284c7" />
-                    <Text style={[styles.callSmallText, { color: '#0284c7' }]}>Call Customer</Text>
+                  <Text style={[styles.stopRole, { color: '#16a34a' }]}>CUSTOMER DESTINATION</Text>
+                  <TouchableOpacity onPress={() => handleCall(customerPhone)} style={[styles.callSmallBtn, { borderColor: '#16a34a' }]}>
+                    <Ionicons name="call" size={12} color="#16a34a" />
+                    <Text style={[styles.callSmallText, { color: '#16a34a' }]}>Call Customer</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.stopName}>{customerName}</Text>
@@ -546,7 +547,7 @@ export const ActiveNavigationScreen = ({ navigation }) => {
                 />
               </View>
               <TouchableOpacity
-                style={[styles.primaryActionBtn, { backgroundColor: '#0284c7' }]}
+                style={[styles.primaryActionBtn, { backgroundColor: '#16a34a' }]}
                 onPress={handleVerifyDelivery}
                 disabled={isSubmitting}
                 activeOpacity={0.85}
@@ -607,11 +608,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     paddingHorizontal: 22,
     paddingVertical: 14,
     borderRadius: 9999,
-    shadowColor: '#0284c7',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -643,7 +644,7 @@ const styles = StyleSheet.create({
   },
   headerSub: {
     fontSize: 12,
-    color: '#0284c7',
+    color: '#16a34a',
     fontWeight: '600',
     marginTop: 1
   },
@@ -681,7 +682,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   phaseDotActive: {
-    backgroundColor: '#0284c7'
+    backgroundColor: '#16a34a'
   },
   phaseLine: {
     flex: 1,
@@ -690,7 +691,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 8
   },
   phaseLineActive: {
-    backgroundColor: '#0284c7'
+    backgroundColor: '#16a34a'
   },
   phaseLabelRow: {
     flexDirection: 'row',
@@ -828,7 +829,7 @@ const styles = StyleSheet.create({
   riderBeaconText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#0284c7'
+    color: '#16a34a'
   },
   paymentBanner: {
     flexDirection: 'row',
@@ -884,7 +885,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     marginRight: 8
   },
   itemName: {
@@ -903,8 +904,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1.5,
-    borderColor: '#0284c7',
-    shadowColor: '#0284c7',
+    borderColor: '#16a34a',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,

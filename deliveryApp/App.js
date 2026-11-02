@@ -67,7 +67,7 @@ function RiderSession({ children }) {
   return <DeliveryProvider key={rider?._id || rider?.id || 'guest'}>{children}</DeliveryProvider>;
 }
 export default function App() {
-  const [isAppReady, setAppReady] = React.useState(false);
+  const [isAppReady, setAppReady] = React.useState(Platform.OS === 'web');
   const [imageLoaded, setImageLoaded] = React.useState(false);
   const [layoutDone, setLayoutDone] = React.useState(false);
   const timerRef = React.useRef(null);

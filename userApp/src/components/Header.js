@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import storage from "../services/storage";
@@ -207,7 +208,13 @@ export const Header = ({
   };
 
   return (
-    <View style={[styles.wrapper, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={["#bbf7d0", "#dcfce7", "#f0fdf4"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.wrapper, { paddingTop: insets.top }]}
+    >
+      <View style={styles.headerOrb} pointerEvents="none" />
       <View style={styles.container}>
         {canGoBack ? (
           <GlassIconBtn
@@ -247,7 +254,7 @@ export const Header = ({
               <Text style={styles.addressSub} numberOfLines={1}>
                 {isLocationLoading
                   ? "Detecting your location..."
-                  : `${locationSubtitle} · Express 30–45 min`}
+                  : locationSubtitle}
               </Text>
             </TouchableOpacity>
           )}
@@ -389,20 +396,30 @@ export const Header = ({
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: colors.card,
+    position: "relative",
+    overflow: "hidden",
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 2,
+    borderBottomColor: "#86efac",
+    shadowColor: "#16a34a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  headerOrb: {
+    position: "absolute",
+    top: -20,
+    right: 30,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(255, 255, 255, 0.45)",
   },
   container: {
     flexDirection: "row",

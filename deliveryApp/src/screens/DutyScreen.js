@@ -12,8 +12,10 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
 import { useRiderAuth } from '../context/RiderAuthContext';
 import { useDelivery } from '../context/DeliveryContext';
+import { BrandBackground } from '../components/BrandBackground';
 
 export const DutyScreen = ({ navigation }) => {
   const { rider, toggleDutyStatus } = useRiderAuth();
@@ -52,7 +54,7 @@ export const DutyScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <BrandBackground style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
       {/* Header Bar */}
@@ -71,7 +73,7 @@ export const DutyScreen = ({ navigation }) => {
         </View>
 
         {/* Duty Toggle Switch */}
-        <View style={[styles.dutySwitchBox, { backgroundColor: isOnline ? '#f0fdf4' : '#f8fafc' }]}>
+        <View style={[styles.dutySwitchBox, { backgroundColor: isOnline ? colors.primaryLight : '#f1f5f9' }]}>
           <View style={[styles.dutyDot, { backgroundColor: isOnline ? '#16a34a' : '#94a3b8' }]} />
           <Text style={[styles.dutyLabel, { color: isOnline ? '#15803d' : '#64748b' }]}>
             {isOnline ? 'ONLINE' : 'OFFLINE'}
@@ -108,7 +110,7 @@ export const DutyScreen = ({ navigation }) => {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statVal, { color: '#0284c7' }]}>₹65</Text>
+            <Text style={[styles.statVal, { color: '#16a34a' }]}>₹65</Text>
             <Text style={styles.statLabel}>Base / Order</Text>
           </View>
         </View>
@@ -135,7 +137,7 @@ export const DutyScreen = ({ navigation }) => {
 
             <View style={styles.jumpBtnRow}>
               <Text style={styles.jumpBtnText}>Tap to Open Route & Navigation</Text>
-              <Ionicons name="arrow-forward" size={16} color="#0284c7" />
+              <Ionicons name="arrow-forward" size={16} color="#16a34a" />
             </View>
           </TouchableOpacity>
         )}
@@ -157,7 +159,7 @@ export const DutyScreen = ({ navigation }) => {
             <View style={styles.poolHeader}>
               <Text style={styles.poolTitle}>Nearby Orders Available ({availableOrders.length})</Text>
               <TouchableOpacity onPress={onRefresh}>
-                <Ionicons name="refresh" size={18} color="#0284c7" />
+                <Ionicons name="refresh" size={18} color="#16a34a" />
               </TouchableOpacity>
             </View>
 
@@ -208,14 +210,13 @@ export const DutyScreen = ({ navigation }) => {
           </View>
         )}
       </ScrollView>
-    </View>
+    </BrandBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#f8fafc'
+    flex: 1
   },
   header: {
     flexDirection: 'row',
@@ -225,8 +226,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#bbf7d0'
   },
   headerLeft: {
     flexDirection: 'row',
@@ -237,7 +238,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -282,7 +283,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40
+    paddingBottom: 96
   },
   statsBar: {
     flexDirection: 'row',
@@ -290,11 +291,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    shadowColor: '#16a34a',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
     justifyContent: 'space-around',
     alignItems: 'center'
   },
@@ -379,7 +382,7 @@ const styles = StyleSheet.create({
   jumpBtnText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0284c7'
+    color: '#16a34a'
   },
   offlineNotice: {
     backgroundColor: '#ffffff',
@@ -491,7 +494,7 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   claimBtn: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     borderRadius: 14,
     paddingVertical: 12,
     flexDirection: 'row',

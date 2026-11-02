@@ -1,148 +1,58 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 /**
- * WaterBackground
- * Renders very slow, low-opacity floating organic gradient blobs in the background
- * to produce an ambient liquid water / shimmering glass depth beneath all content.
+ * WaterBackground (Brand Gradient Canvas)
+ * Clearly visible, soft diagonal gradient (#DCFCE7 → #F0FDF4 → #FFF7ED)
+ * with static low-opacity ambient accents that preserve card legibility and performance.
  */
 export const WaterBackground = () => {
-  const floatAnim1 = useRef(new Animated.Value(0)).current;
-  const floatAnim2 = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop1 = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim1, {
-          toValue: 1,
-          duration: 9000,
-          useNativeDriver: false
-        }),
-        Animated.timing(floatAnim1, {
-          toValue: 0,
-          duration: 9000,
-          useNativeDriver: false
-        })
-      ])
-    );
-
-    const loop2 = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim2, {
-          toValue: 1,
-          duration: 12000,
-          useNativeDriver: false
-        }),
-        Animated.timing(floatAnim2, {
-          toValue: 0,
-          duration: 12000,
-          useNativeDriver: false
-        })
-      ])
-    );
-
-    loop1.start();
-    loop2.start();
-
-    return () => {
-      loop1.stop();
-      loop2.stop();
-    };
-  }, [floatAnim1, floatAnim2]);
-
-  const translateY1 = floatAnim1.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 30]
-  });
-  const translateX1 = floatAnim1.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 20]
-  });
-
-  const translateY2 = floatAnim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -35]
-  });
-  const translateX2 = floatAnim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -25]
-  });
-
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Base Canvas Toned White */}
-      <View style={styles.baseBg} />
-
-      {/* Floating Amber/Orange Water Blob */}
-      <Animated.View
-        style={[
-          styles.blob,
-          styles.amberBlob,
-          {
-            transform: [{ translateX: translateX1 }, { translateY: translateY1 }]
-          }
-        ]}
+      <LinearGradient
+        colors={['#dcfce7', '#f0fdf4', '#fff7ed']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
-
-      {/* Floating Emerald/Green Water Blob */}
-      <Animated.View
-        style={[
-          styles.blob,
-          styles.greenBlob,
-          {
-            transform: [{ translateX: translateX2 }, { translateY: translateY2 }]
-          }
-        ]}
-      />
-
-      {/* Floating Sky Blue Water Droplet Blob */}
-      <Animated.View
-        style={[
-          styles.blob,
-          styles.blueBlob,
-          {
-            transform: [{ translateX: translateY1 }, { translateY: translateX2 }]
-          }
-        ]}
-      />
+      {/* Static low-opacity decorative circles */}
+      <View style={styles.orbTopRight} pointerEvents="none" />
+      <View style={styles.orbMidLeft} pointerEvents="none" />
+      <View style={styles.orbBottomRight} pointerEvents="none" />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  baseBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#f8fafc'
-  },
-  blob: {
+  orbTopRight: {
     position: 'absolute',
-    borderRadius: 9999,
-    opacity: 0.16
-  },
-  amberBlob: {
-    top: -40,
+    top: -50,
     right: -50,
-    width: 280,
-    height: 280,
-    backgroundColor: '#ea580c',
-    ...(Platform.OS === 'web' ? { filter: 'blur(60px)' } : {})
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(22, 163, 74, 0.08)'
   },
-  greenBlob: {
-    top: 220,
-    left: -60,
-    width: 260,
-    height: 260,
-    backgroundColor: '#16a34a',
-    ...(Platform.OS === 'web' ? { filter: 'blur(60px)' } : {})
+  orbMidLeft: {
+    position: 'absolute',
+    top: 320,
+    left: -70,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(234, 88, 12, 0.05)'
   },
-  blueBlob: {
-    bottom: 80,
-    right: -40,
-    width: 240,
-    height: 240,
-    backgroundColor: '#0284c7',
-    ...(Platform.OS === 'web' ? { filter: 'blur(55px)' } : {})
+  orbBottomRight: {
+    position: 'absolute',
+    bottom: 60,
+    right: -60,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: 'rgba(22, 163, 74, 0.06)'
   }
 });
+
+export default WaterBackground;

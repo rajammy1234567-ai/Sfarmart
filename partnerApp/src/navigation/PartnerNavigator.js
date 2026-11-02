@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
@@ -14,9 +15,32 @@ const OrdersScreenWrapper = (props) => (
   <VendorDashboardScreen {...props} initialSection="orders" />
 );
 
+const getInitialTab = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+    try {
+      const tab = new URLSearchParams(window.location.search).get('tab');
+      if (tab && ['Dashboard', 'Orders', 'Inventory', 'Reports', 'Account'].includes(tab)) {
+        return tab;
+      }
+    } catch {}
+  }
+  return 'Dashboard';
+};
+
+const getInitialStack = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+    try {
+      const screen = new URLSearchParams(window.location.search).get('screen');
+      if (screen === 'AddProduct') return 'AddProduct';
+    } catch {}
+  }
+  return 'PartnerTabs';
+};
+
 const PartnerTabs = () => {
   return (
     <Tab.Navigator
+      initialRouteName={getInitialTab()}
       tabBar={(props) => <GlassTabBar {...props} />}
       screenOptions={{
         headerShown: false
@@ -54,6 +78,7 @@ const PartnerTabs = () => {
 export const PartnerNavigator = () => {
   return (
     <Stack.Navigator
+      initialRouteName={getInitialStack()}
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',

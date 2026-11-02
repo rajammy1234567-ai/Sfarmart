@@ -13,6 +13,7 @@ import {
   AppState
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startPolling } from '../../services/requestPolicy';
 import { apiService } from '../../services/api';
 import { useCart } from '../../context/CartContext';
@@ -21,8 +22,10 @@ import { ClearCartModal } from '../../components/ClearCartModal';
 import { colors } from '../../theme/colors';
 import { showAlert } from '../../utils/alert';
 import { SafeImage, isValidImageUri } from '../../components/common/SafeImage';
+import { isPreparedFoodProduct } from '../../components/ProductCard';
 
 export const VendorStoreScreen = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const initialVendor = route.params?.vendor || {};
   const targetVendorId = route.params?.vendor?._id || route.params?.vendorId || route.params?.vendor?.id || initialVendor._id;
   const [vendor, setVendor] = useState(initialVendor);
@@ -153,10 +156,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
       <View style={styles.heroBanner}>
         <SafeImage
           source={{
-            uri:
-              isValidImageUri(vendor?.banner)
-                ? vendor.banner
-                : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=800&auto=format&fit=crop&q=80'
+            uri: isValidImageUri(vendor?.banner) ? vendor.banner : null
           }}
           style={styles.heroImg}
           placeholderIcon="storefront-outline"
@@ -180,10 +180,12 @@ export const VendorStoreScreen = ({ route, navigation }) => {
               : '🌾 Direct Farm Harvest'}
           </Text>
           <View style={styles.heroBadgesRow}>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={12} color="#ffffff" />
-              <Text style={styles.ratingBadgeText}>{vendor?.rating || 4.8}</Text>
-            </View>
+            {vendor?.rating && typeof vendor?.rating === 'number' && vendor.rating > 0 ? (
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={12} color="#ffffff" />
+                <Text style={styles.ratingBadgeText}>{Number(vendor.rating).toFixed(1)}</Text>
+              </View>
+            ) : null}
             <Text style={styles.heroBadgeText}>⚡ {vendor?.avgPrepTimeMins || 25} mins prep</Text>
             <Text style={styles.heroBadgeText}>• Min ₹{vendor?.minOrderValue || 99}</Text>
 
@@ -268,10 +270,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            billSummary.totalCount > 0 && { paddingBottom: 100 }
-          ]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: billSummary.totalCount > 0 ? Math.max(90, insets.bottom + 80) : Math.max(30, insets.bottom + 24) }]}
           showsVerticalScrollIndicator={false}
         >
           {productError ? (
@@ -290,9 +289,11 @@ export const VendorStoreScreen = ({ route, navigation }) => {
               const isOutOfStock = product.inStock === false || (product.stockQty !== undefined && product.stockQty <= 0);
               const isLowStock = !isOutOfStock && product.stockQty !== undefined && product.stockQty <= 5 && product.stockQty > 0;
               const isMaxStockReached = !isOutOfStock && product.stockQty !== undefined && qty >= product.stockQty;
+              const isFood = isPreparedFoodProduct({ ...product, vendor });
+              const resizeMode = isFood ? 'cover' : 'contain';
 
               return (
-                <View key={product._id} style={[styles.productCard, isOutOfStock && { opacity: 0.82 }]}>
+                <TouchableOpacity key={product._id} style={[styles.productCard, isOutOfStock && { opacity: 0.82 }]} activeOpacity={0.88} onPress={() => navigation.navigate('ProductDetails', { product: { ...product, vendor } })}>
                   <View style={styles.productMeta}>
                     {/* Veg Indicator */}
                     <View style={styles.vegBox}>
@@ -329,11 +330,12 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                   </View>
 
                   <View style={styles.productRight}>
-                    <View style={styles.prodImgContainer}>
+                    <View style={[styles.prodImgContainer, !isFood && styles.prodImgContainerGrocery]}>
                       <SafeImage
                         source={{ uri: product.image }}
-                        style={styles.prodImg}
-                        placeholderIcon="restaurant-outline"
+                        style={[styles.prodImg, !isFood && styles.prodImgGrocery]}
+                        resizeMode={resizeMode}
+                        placeholderIcon={isFood ? 'restaurant-outline' : 'leaf-outline'}
                         placeholderIconSize={28}
                       />
                       {isOutOfStock && (
@@ -392,7 +394,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                       )}
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })
           )}
@@ -401,7 +403,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
 
       {/* Sticky Bottom Cart Bar */}
       {billSummary.totalCount > 0 && (
-        <View style={styles.stickyCartBar}>
+        <View style={[styles.stickyCartBar, { bottom: Math.max(16, insets.bottom + 12) }]}>
           <View>
             <Text style={styles.cartCountText}>{billSummary.totalCount} ITEM(S)</Text>
             <Text style={styles.cartTotalText}>₹{billSummary.grandTotal ?? billSummary.total ?? 0}</Text>
@@ -478,7 +480,9 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   heroBanner: {
-    height: 180,
+    width: '100%',
+    aspectRatio: 16 / 9,
+    minHeight: 180,
     position: 'relative',
     justifyContent: 'flex-end',
     padding: 16

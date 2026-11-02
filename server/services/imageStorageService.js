@@ -1,8 +1,9 @@
-// imageStorageService.js – Durable MongoDB GridFS and Object Storage for Product Images
+// imageStorageService.js – Durable MongoDB GridFS and Object Storage for Product & Shop Images
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 
 const BUCKET_NAME = 'product_images';
+const SHOP_BUCKET_NAME = 'shop_images';
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -68,7 +69,7 @@ export function validateImageMagicBytes(buffer, mimeType) {
 }
 
 /**
- * Gets or initializes the MongoDB GridFS Bucket for durable image storage
+ * Gets or initializes the MongoDB GridFS Bucket for durable product image storage
  */
 export function getGridFSBucket() {
   const db = mongoose.connection.db;
@@ -77,6 +78,19 @@ export function getGridFSBucket() {
   }
   return new mongoose.mongo.GridFSBucket(db, {
     bucketName: BUCKET_NAME
+  });
+}
+
+/**
+ * Gets or initializes the MongoDB GridFS Bucket for durable shop cover photo storage
+ */
+export function getShopGridFSBucket() {
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('Database connection not established.');
+  }
+  return new mongoose.mongo.GridFSBucket(db, {
+    bucketName: SHOP_BUCKET_NAME
   });
 }
 
@@ -152,7 +166,77 @@ export async function storeProductImage({ buffer, originalName, mimeType, vendor
 }
 
 /**
- * Retrieves an image stream and its metadata by GridFS file ID
+ * Stores a validated shop cover image buffer into MongoDB GridFS
+ */
+export async function storeShopImage({ buffer, originalName, mimeType, vendorId }) {
+  if (!buffer || buffer.length === 0) {
+    throw new Error('Image data cannot be empty.');
+  }
+
+  if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
+    throw new Error(`Image size (${Math.round(buffer.length / 1024)} KB) exceeds the 5 MB limit.`);
+  }
+
+  const normalizedMime = (mimeType || '').toLowerCase().trim();
+  if (!ALLOWED_MIME_TYPES.has(normalizedMime)) {
+    throw new Error(`Unsupported image MIME type "${mimeType}". Allowed types: JPEG, PNG, WEBP, GIF.`);
+  }
+
+  const magicCheck = validateImageMagicBytes(buffer, normalizedMime);
+  if (!magicCheck.valid) {
+    throw new Error(`Security validation failed: ${magicCheck.reason}`);
+  }
+
+  const extension = magicCheck.detectedMime === 'image/png'
+    ? 'png'
+    : magicCheck.detectedMime === 'image/webp'
+    ? 'webp'
+    : magicCheck.detectedMime === 'image/gif'
+    ? 'gif'
+    : 'jpg';
+
+  const safeVendorId = String(vendorId || 'unassigned').replace(/[^a-zA-Z0-9]/g, '');
+  const uniqueToken = crypto.randomBytes(6).toString('hex');
+  const safeFilename = `shop-${safeVendorId}-${Date.now()}-${uniqueToken}.${extension}`;
+
+  const bucket = getShopGridFSBucket();
+
+  const metadata = {
+    vendorId: String(vendorId),
+    purpose: 'shop_cover',
+    originalName: (originalName || 'upload').slice(0, 100).replace(/[^a-zA-Z0-9._-]/g, '_'),
+    mimeType: magicCheck.detectedMime,
+    size: buffer.length,
+    uploadedAt: new Date()
+  };
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = bucket.openUploadStream(safeFilename, {
+      metadata,
+      contentType: magicCheck.detectedMime
+    });
+
+    uploadStream.on('error', (err) => {
+      reject(new Error(`GridFS upload failed: ${err.message}`));
+    });
+
+    uploadStream.on('finish', () => {
+      const fileId = (uploadStream.id || (uploadStream.gridFSFile && uploadStream.gridFSFile._id) || '').toString();
+      resolve({
+        fileId,
+        filename: safeFilename,
+        mimeType: magicCheck.detectedMime,
+        size: buffer.length,
+        path: `/api/uploads/shop-photos/${fileId}`
+      });
+    });
+
+    uploadStream.end(buffer);
+  });
+}
+
+/**
+ * Retrieves a product image stream and its metadata by GridFS file ID
  */
 export async function getProductImageStream(fileId) {
   if (!fileId || !mongoose.isValidObjectId(fileId)) {
@@ -177,6 +261,64 @@ export async function getProductImageStream(fileId) {
     length: file.length,
     filename: file.filename
   };
+}
+
+/**
+ * Retrieves a shop cover image stream and its metadata by GridFS file ID
+ */
+export async function getShopImageStream(fileId) {
+  if (!fileId || !mongoose.isValidObjectId(fileId)) {
+    return null;
+  }
+
+  const bucket = getShopGridFSBucket();
+  const objectId = new mongoose.Types.ObjectId(fileId);
+
+  const files = await bucket.find({ _id: objectId }).toArray();
+  if (!files || files.length === 0) {
+    return null;
+  }
+
+  const file = files[0];
+  const stream = bucket.openDownloadStream(objectId);
+
+  return {
+    file,
+    stream,
+    mimeType: file.metadata?.mimeType || file.contentType || 'image/jpeg',
+    length: file.length,
+    filename: file.filename
+  };
+}
+
+/**
+ * Cleans up an obsolete shop cover image from GridFS when replaced or removed
+ */
+export async function cleanupOldShopImage(oldPathOrFileId, vendorId) {
+  if (!oldPathOrFileId) return;
+
+  let fileId = oldPathOrFileId;
+  if (typeof oldPathOrFileId === 'string' && oldPathOrFileId.includes('/shop-photos/')) {
+    fileId = oldPathOrFileId.split('/shop-photos/').pop().split('?')[0];
+  }
+
+  if (!mongoose.isValidObjectId(fileId)) return;
+
+  try {
+    const bucket = getShopGridFSBucket();
+    const objectId = new mongoose.Types.ObjectId(fileId);
+
+    const files = await bucket.find({ _id: objectId }).toArray();
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (!vendorId || String(file.metadata?.vendorId) === String(vendorId)) {
+        await bucket.delete(objectId);
+        console.log(`[ImageStorage] Cleaned up obsolete shop photo ${fileId}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[ImageStorage] Failed to cleanup obsolete shop photo ${fileId}:`, err.message);
+  }
 }
 
 /**

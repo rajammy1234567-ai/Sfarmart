@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRiderAuth } from '../context/RiderAuthContext';
+import { BrandBackground } from '../components/BrandBackground';
 
 export const ProfileScreen = () => {
   const { rider, logout: logoutRider } = useRiderAuth();
@@ -49,7 +50,7 @@ export const ProfileScreen = () => {
   const totalTrips = rider?.stats?.totalDeliveries || 142;
 
   return (
-    <View style={styles.container}>
+    <BrandBackground style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
       {/* Top Header */}
@@ -95,7 +96,7 @@ export const ProfileScreen = () => {
         {/* Assigned Vehicle Details */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
-            <Ionicons name="bicycle" size={18} color="#0284c7" />
+            <Ionicons name="bicycle" size={18} color="#16a34a" />
             <Text style={styles.sectionTitle}>REGISTERED DELIVERY VEHICLE</Text>
           </View>
 
@@ -174,12 +175,12 @@ export const ProfileScreen = () => {
 
         {/* 24x7 Rider Support Button */}
         <TouchableOpacity style={styles.supportBtn} onPress={handleSupportCall} activeOpacity={0.85}>
-          <Ionicons name="headset-outline" size={20} color="#0284c7" />
+          <Ionicons name="headset-outline" size={20} color="#16a34a" />
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.supportBtnTitle}>Rider Partner Helpline</Text>
             <Text style={styles.supportBtnSub}>24x7 toll-free dispatch and emergency support</Text>
           </View>
-          <Ionicons name="call-outline" size={18} color="#0284c7" />
+          <Ionicons name="call-outline" size={18} color="#16a34a" />
         </TouchableOpacity>
 
         {/* Logout Button */}
@@ -188,14 +189,13 @@ export const ProfileScreen = () => {
           <Text style={styles.logoutText}>Log Out from Rider Portal</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </BrandBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#f8fafc'
+    flex: 1
   },
   topHeader: {
     flexDirection: 'row',
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40
+    paddingBottom: 96
   },
   profileCard: {
     backgroundColor: '#ffffff',
@@ -272,10 +272,10 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0284c7',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   supportBtnTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#0284c7'
+    color: '#16a34a'
   },
   supportBtnSub: {
     fontSize: 11.5,

@@ -52,26 +52,7 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
   const scrollRef = useRef(null);
   const ordersSectionRef = useRef(null);
 
-  // Breathing Pulse Animation (Zomato-Style Status Glow)
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.28,
-          duration: 900,
-          useNativeDriver: false
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1.0,
-          duration: 900,
-          useNativeDriver: false
-        })
-      ])
-    );
-    pulseLoop.start();
-    return () => pulseLoop.stop();
-  }, [pulseAnim]);
+  // Online/Offline status indicator (clean, zero indefinite CPU drain)
 
   const isStoreOpen = vendor?.isOpen ?? true;
 
@@ -135,13 +116,10 @@ export const VendorDashboardScreen = ({ navigation, initialSection }) => {
                 isStoreOpen ? styles.statusPillOnline : styles.statusPillOffline
               ]}
             >
-              <Animated.View
+              <View
                 style={[
                   styles.statusPillDot,
-                  isStoreOpen ? styles.dotOnline : styles.dotOffline,
-                  {
-                    transform: [{ scale: isStoreOpen ? pulseAnim : 1 }]
-                  }
+                  isStoreOpen ? styles.dotOnline : styles.dotOffline
                 ]}
               />
               <Text

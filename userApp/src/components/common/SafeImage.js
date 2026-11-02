@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { resolveMediaUrl, isValidImageUri } from '../../utils/media';
 
 const DEFAULT_FALLBACK_IMAGE = require('../../../assets/farmart24_logo.jpg');
 
-export const isValidImageUri = (uri) => {
-  return typeof uri === 'string' && uri.trim().length > 0;
-};
+export { resolveMediaUrl, isValidImageUri };
 
 export const getSafeImageSource = (source, fallback = DEFAULT_FALLBACK_IMAGE) => {
   if (typeof source === 'number') {
     return source;
   }
-  if (source && typeof source === 'object') {
-    if (isValidImageUri(source.uri)) {
-      return { ...source, uri: source.uri.trim() };
-    }
-  } else if (isValidImageUri(source)) {
-    return { uri: source.trim() };
+  const rawUri = typeof source === 'object' && source?.uri ? source.uri : (typeof source === 'string' ? source : null);
+  const resolved = resolveMediaUrl(rawUri);
+  if (isValidImageUri(resolved)) {
+    return typeof source === 'object' ? { ...source, uri: resolved } : { uri: resolved };
   }
   return fallback;
 };
@@ -38,7 +35,7 @@ export const SafeImage = ({
   const [failedUri, setFailedUri] = useState(null);
 
   const rawUri = typeof source === 'object' && source?.uri ? source.uri : (typeof source === 'string' ? source : null);
-  const validUri = isValidImageUri(rawUri) ? rawUri.trim() : null;
+  const validUri = resolveMediaUrl(rawUri);
 
   // Reset error only if the URI changes to a new non-empty URI
   useEffect(() => {

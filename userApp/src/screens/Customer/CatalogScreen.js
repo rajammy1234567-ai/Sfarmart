@@ -5,10 +5,10 @@ import {
   StyleSheet,
   FlatList,
   TextInput,
-  Dimensions,
   ActivityIndicator,
   TouchableOpacity
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components/Header';
 import { ShoppingFromBanner } from '../../components/ShoppingFromBanner';
@@ -18,12 +18,12 @@ import { ClearCartModal } from '../../components/ClearCartModal';
 import { useCart } from '../../context/CartContext';
 import { apiService } from '../../services/api';
 import { colors } from '../../theme/colors';
+import { getScrollBottomPadding } from '../../theme/layout';
 
-const { width } = Dimensions.get('window');
-const GAP = 10;
-const CARD_WIDTH = (width - 32 - GAP) / 2;
+const GAP = 12;
 
 export const CatalogScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { conflictModal, confirmReplaceCart, cancelReplaceCart } = useCart();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -64,8 +64,8 @@ export const CatalogScreen = ({ navigation }) => {
   };
 
   const filteredProducts = products.filter((p) => {
-    const matchesCat = selectedCat === 'all' || p.category === selectedCat;
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCat = selectedCat === 'all' || p.category === selectedCat || p.category?._id === selectedCat || p.category?.slug === selectedCat;
+    const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
   });
 
@@ -100,7 +100,7 @@ export const CatalogScreen = ({ navigation }) => {
       />
 
       <View style={styles.countRow}>
-        <Text style={styles.countText}>{filteredProducts.length} products</Text>
+        <Text style={styles.countText}>{filteredProducts.length} items available</Text>
       </View>
 
       {isLoading ? (
@@ -122,7 +122,10 @@ export const CatalogScreen = ({ navigation }) => {
           keyExtractor={(item) => item._id || item.id}
           numColumns={2}
           columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[
+            styles.listContainer,
+            { paddingBottom: getScrollBottomPadding(insets, false) }
+          ]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <View style={styles.cardWrap}>
@@ -169,7 +172,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
@@ -189,19 +192,29 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.textSecondary
   },
   listContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24
+    paddingHorizontal: 16
   },
   row: {
     gap: GAP,
     marginBottom: GAP
   },
   cardWrap: {
-    width: CARD_WIDTH
+    flex: 1,
+    minWidth: 0
+  },
+  loadingContainer: {
+    paddingVertical: 50,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: colors.textSecondary
   },
   emptyContainer: {
     alignItems: 'center',
@@ -210,7 +223,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.textPrimary,
     marginTop: 10
   },
@@ -218,5 +231,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4
+  },
+  retryBtn: {
+    marginTop: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 8
+  },
+  retryText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

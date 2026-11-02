@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePartner } from '../context/PartnerContext';
 import { GlassCard } from '../components/GlassCard';
+import { ShopPhotoUploader } from '../components/ShopPhotoUploader';
 import { WaterBackground } from '../components/WaterBackground';
 import { showAlert } from '../utils/alert';
 
@@ -155,6 +156,20 @@ export const PartnerAccountScreen = () => {
               <Text style={styles.metricValue}>{stats?.allTimeDelivered || 0}</Text>
             </View>
           </View>
+        </GlassCard>
+
+        {/* Shop Cover Photo Card */}
+        <GlassCard style={styles.sectionCard}>
+          <View style={styles.cardHeaderRow}>
+            <View style={[styles.sectionIconOrb, { backgroundColor: 'rgba(22, 163, 74, 0.12)' }]}>
+              <Ionicons name="image-outline" size={18} color="#16a34a" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.sectionTitle}>Shop Cover Photo</Text>
+              <Text style={styles.sectionSubtitle}>Displayed prominently to customers on S-farmart</Text>
+            </View>
+          </View>
+          <ShopPhotoUploader />
         </GlassCard>
 
         {/* 2. Store Operational Parameters Card */}

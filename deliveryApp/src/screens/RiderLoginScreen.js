@@ -154,7 +154,7 @@ export const RiderLoginScreen = () => {
             <Text style={styles.perkText}>Accidental Insurance Included</Text>
           </View>
           <View style={styles.perkItem}>
-            <Ionicons name="cash" size={18} color="#0284c7" />
+            <Ionicons name="cash" size={18} color="#16a34a" />
             <Text style={styles.perkText}>Weekly Wednesday Bank Transfers</Text>
           </View>
           <View style={styles.perkItem}>
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     color: '#0f172a'
   },
   submitBtn: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     borderRadius: 16,
     height: 52,
     flexDirection: 'row',
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     marginTop: 8,
-    shadowColor: '#0284c7',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

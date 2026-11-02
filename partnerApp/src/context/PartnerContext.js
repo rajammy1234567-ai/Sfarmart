@@ -547,6 +547,112 @@ export const PartnerProvider = ({ children }) => {
     }
   };
 
+  // Upload shop cover photo to GridFS
+  const uploadShopPhoto = async (fileInput) => {
+    if (!token) return { success: false, message: 'Not authenticated' };
+    try {
+      const formData = new FormData();
+
+      if (typeof window !== 'undefined' && (fileInput instanceof Blob || (typeof File !== 'undefined' && fileInput instanceof File))) {
+        formData.append('image', fileInput, fileInput.name || 'shop_cover.jpg');
+      } else if (typeof fileInput === 'object' && fileInput.uri) {
+        if (typeof window !== 'undefined' && (fileInput.uri.startsWith('blob:') || fileInput.uri.startsWith('data:'))) {
+          const fetched = await window.fetch(fileInput.uri);
+          const blob = await fetched.blob();
+          formData.append('image', blob, fileInput.fileName || fileInput.name || 'shop_cover.jpg');
+        } else {
+          formData.append('image', {
+            uri: fileInput.uri,
+            name: fileInput.fileName || fileInput.name || 'shop_cover.jpg',
+            type: fileInput.mimeType || fileInput.type || 'image/jpeg'
+          });
+        }
+      } else {
+        return { success: false, message: 'Invalid image input format.' };
+      }
+
+      const res = await fetch(`${API_BASE_URL}/uploads/shop-photo`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (res.status === 401) {
+        await handleSessionExpired('Shop photo upload returned 401');
+        return { success: false, message: 'Session expired' };
+      }
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.vendor) {
+          setVendor(data.vendor);
+          try { await storage.saveVendor(data.vendor); } catch {}
+        }
+        return {
+          success: true,
+          url: data.url,
+          path: data.path,
+          fileId: data.fileId,
+          vendor: data.vendor
+        };
+      }
+      return { success: false, code: data.code, message: data.message || 'Shop photo upload failed' };
+    } catch (err) {
+      console.warn('Failed to upload shop photo:', err);
+      return { success: false, message: err.message || 'Network error during shop photo upload' };
+    }
+  };
+
+  // Remove shop cover photo
+  const removeShopPhoto = async () => {
+    if (!token) return { success: false, message: 'Not authenticated' };
+    try {
+      const res = await fetch(`${API_BASE_URL}/uploads/shop-photo`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (res.status === 401) {
+        await handleSessionExpired('Shop photo delete returned 401');
+        return { success: false, message: 'Session expired' };
+      }
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.vendor) {
+          setVendor(data.vendor);
+          try { await storage.saveVendor(data.vendor); } catch {}
+        }
+        return { success: true, vendor: data.vendor };
+      }
+      return { success: false, message: data.message || 'Failed to remove shop photo' };
+    } catch (err) {
+      console.warn('Failed to remove shop photo:', err);
+      return { success: false, message: err.message || 'Network error' };
+    }
+  };
+
+  // Refresh fresh vendor profile from server
+  const refreshVendorProfile = async () => {
+    if (!vendor?._id) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/vendors/${vendor._id}`);
+      const data = await res.json();
+      if (data.success && data.vendor) {
+        setVendor(data.vendor);
+        try { await storage.saveVendor(data.vendor); } catch {}
+        return data.vendor;
+      }
+    } catch (e) {
+      console.warn('Failed to refresh vendor profile:', e);
+    }
+    return null;
+  };
+
   // Add Product permanently to MongoDB
   const addInventoryItem = async (item) => {
     if (!token) return { success: false, message: 'Not authenticated' };
@@ -797,6 +903,9 @@ export const PartnerProvider = ({ children }) => {
         inventory,
         fetchInventory,
         uploadProductImage,
+        uploadShopPhoto,
+        removeShopPhoto,
+        refreshVendorProfile,
         addInventoryItem,
         updateInventoryItem,
         toggleItemAvailability,

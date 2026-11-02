@@ -17,6 +17,7 @@ import { colors } from '../../theme/colors';
 import { showAlert } from '../../utils/alert';
 import { SafeAreaWrapper } from '../../components/SafeAreaWrapper';
 import { SafeImage } from '../../components/common/SafeImage';
+import { isPreparedFoodProduct } from '../../components/ProductCard';
 
 export const CartScreen = ({ navigation }) => {
   const { requireLogin } = useAuthGate();
@@ -164,12 +165,15 @@ export const CartScreen = ({ navigation }) => {
 
               return (
                 <View key={prodId} style={[styles.cartCard, isProdOutOfStock && { borderColor: '#fca5a5', backgroundColor: '#fff5f5' }]}>
-                  <SafeImage
-                    source={{ uri: prod.image }}
-                    style={styles.itemImage}
-                    placeholderIcon="fast-food-outline"
-                    placeholderIconSize={24}
-                  />
+                  <View style={[styles.itemImageContainer, !isPreparedFoodProduct(prod) && styles.itemImageContainerGrocery]}>
+                    <SafeImage
+                      source={{ uri: prod.image }}
+                      style={[styles.itemImage, !isPreparedFoodProduct(prod) && styles.itemImageGrocery]}
+                      resizeMode={isPreparedFoodProduct(prod) ? 'cover' : 'contain'}
+                      placeholderIcon={isPreparedFoodProduct(prod) ? 'restaurant-outline' : 'leaf-outline'}
+                      placeholderIconSize={24}
+                    />
+                  </View>
 
                   <View style={styles.itemInfo}>
                     <Text style={styles.itemTitle} numberOfLines={1}>

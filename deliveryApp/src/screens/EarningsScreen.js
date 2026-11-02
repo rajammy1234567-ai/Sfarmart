@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useDelivery } from '../context/DeliveryContext';
+import { BrandBackground } from '../components/BrandBackground';
 
 export const EarningsScreen = () => {
   const { earnings, refreshEarnings } = useDelivery();
@@ -32,7 +33,7 @@ export const EarningsScreen = () => {
   const progressPercent = Math.min(100, Math.round((completedCount / incentiveTarget) * 100));
 
   return (
-    <View style={styles.container}>
+    <BrandBackground style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
       {/* Top Header */}
@@ -49,7 +50,7 @@ export const EarningsScreen = () => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0284c7" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />}
       >
         {/* Dark Hero Card */}
         <View style={styles.heroCard}>
@@ -114,7 +115,7 @@ export const EarningsScreen = () => {
 
           <View style={styles.breakdownRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="bicycle-outline" size={16} color="#0284c7" />
+              <Ionicons name="bicycle-outline" size={16} color="#16a34a" />
               <Text style={styles.breakdownLabel}>Base Pickup & Drop Fee</Text>
             </View>
             <Text style={styles.breakdownValue}>₹45.00</Text>
@@ -122,7 +123,7 @@ export const EarningsScreen = () => {
 
           <View style={styles.breakdownRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="speedometer-outline" size={16} color="#0284c7" />
+              <Ionicons name="speedometer-outline" size={16} color="#16a34a" />
               <Text style={styles.breakdownLabel}>Distance Surge (per km > 2km)</Text>
             </View>
             <Text style={styles.breakdownValue}>₹15.00</Text>
@@ -130,7 +131,7 @@ export const EarningsScreen = () => {
 
           <View style={styles.breakdownRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="flash-outline" size={16} color="#0284c7" />
+              <Ionicons name="flash-outline" size={16} color="#16a34a" />
               <Text style={styles.breakdownLabel}>Peak Demand Incentive</Text>
             </View>
             <Text style={styles.breakdownValue}>₹5.00</Text>
@@ -175,14 +176,13 @@ export const EarningsScreen = () => {
           )}
         </View>
       </ScrollView>
-    </View>
+    </BrandBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#f8fafc'
+    flex: 1
   },
   topHeader: {
     flexDirection: 'row',
@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40
+    paddingBottom: 96
   },
   heroCard: {
     backgroundColor: '#0f172a',

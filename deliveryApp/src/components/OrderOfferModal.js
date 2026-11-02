@@ -111,7 +111,7 @@ export const OrderOfferModal = () => {
           {/* Top Bar with Countdown Ring */}
           <View style={styles.topRow}>
             <View style={styles.tagPill}>
-              <Ionicons name="flash" size={14} color="#0284c7" />
+              <Ionicons name="flash" size={14} color="#16a34a" />
               <Text style={styles.tagText}>NEW ORDER OFFER</Text>
             </View>
 
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#0284c7'
+    color: '#16a34a'
   },
   timerBadge: {
     flexDirection: 'row',
@@ -370,14 +370,14 @@ const styles = StyleSheet.create({
   },
   acceptBtn: {
     flex: 2,
-    backgroundColor: '#0284c7',
+    backgroundColor: '#16a34a',
     borderRadius: 16,
     paddingVertical: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#0284c7',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

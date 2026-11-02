@@ -231,7 +231,7 @@ export const getVendorStats = async (req, res) => {
 export const updateVendorProfile = async (req, res) => {
   try {
     const vendorId = req.user.vendorId || req.user.id;
-    const { storeName, description, avgPrepTimeMins, minOrderValue, deliveryRadiusKm } = req.body;
+    const { storeName, description, avgPrepTimeMins, minOrderValue, deliveryRadiusKm, banner } = req.body;
 
     const vendor = await Vendor.findById(vendorId);
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
@@ -246,6 +246,17 @@ export const updateVendorProfile = async (req, res) => {
     if (avgPrepTimeMins) vendor.avgPrepTimeMins = Number(avgPrepTimeMins);
     if (minOrderValue) vendor.minOrderValue = Number(minOrderValue);
     if (deliveryRadiusKm) vendor.deliveryRadiusKm = Number(deliveryRadiusKm);
+    if (banner !== undefined) {
+      const cleanBanner = typeof banner === 'string' ? banner.trim() : '';
+      if (cleanBanner && (cleanBanner.startsWith('blob:') || cleanBanner.startsWith('file:') || cleanBanner.startsWith('data:'))) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_IMAGE_URL',
+          message: 'Local blob or file URLs cannot be saved as permanent shop photo.'
+        });
+      }
+      vendor.banner = cleanBanner;
+    }
 
     await vendor.save();
     res.json({ success: true, vendor });

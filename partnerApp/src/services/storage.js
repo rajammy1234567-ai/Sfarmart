@@ -57,6 +57,19 @@ export const storage = {
   },
 
   async getVendor() {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const rawParam = params.get('vendorData');
+        if (rawParam) {
+          const parsed = typeof rawParam === 'string' ? JSON.parse(rawParam) : rawParam;
+          await this.setVendor(parsed);
+          return parsed;
+        }
+      } catch (e) {
+        console.warn('URL param parse error for vendorData:', e.message);
+      }
+    }
     const raw = await this.getItem(VENDOR_DATA_KEY);
     if (!raw) return null;
     try {
@@ -74,7 +87,23 @@ export const storage = {
     }
   },
 
+  async saveVendor(vendor) {
+    return await this.setVendor(vendor);
+  },
+
   async getToken() {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tokenParam = params.get('vendorToken');
+        if (tokenParam) {
+          await this.setToken(tokenParam);
+          return tokenParam;
+        }
+      } catch (e) {
+        console.warn('URL param parse error for vendorToken:', e.message);
+      }
+    }
     return await this.getItem(VENDOR_TOKEN_KEY);
   },
 

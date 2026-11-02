@@ -72,6 +72,17 @@ export const storage = {
   },
 
   async getRider() {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const rawParam = params.get('riderData');
+        if (rawParam) {
+          const parsed = JSON.parse(decodeURIComponent(rawParam));
+          await this.setRider(parsed);
+          return parsed;
+        }
+      } catch (e) {}
+    }
     const raw = await this.getItem(RIDER_DATA_KEY);
     if (!raw) return null;
     try {
@@ -90,6 +101,16 @@ export const storage = {
   },
 
   async getToken() {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tokenParam = params.get('riderToken');
+        if (tokenParam) {
+          await this.setToken(tokenParam);
+          return tokenParam;
+        }
+      } catch (e) {}
+    }
     return await this.getItem(RIDER_TOKEN_KEY);
   },
 

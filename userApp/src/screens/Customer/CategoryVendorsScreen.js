@@ -149,10 +149,7 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
                   <View style={styles.bannerContainer}>
                     <SafeImage
                       source={{
-                        uri:
-                          isValidImageUri(vendor.banner)
-                            ? vendor.banner
-                            : 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=800&auto=format&fit=crop&q=80'
+                        uri: isValidImageUri(vendor.banner) ? vendor.banner : null
                       }}
                       style={styles.bannerImg}
                       placeholderIcon="storefront-outline"
@@ -173,10 +170,12 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
                   <View style={styles.vendorInfo}>
                     <View style={styles.titleRow}>
                       <Text style={styles.storeName}>{vendor.storeName}</Text>
-                      <View style={styles.ratingBox}>
-                        <Ionicons name="star" size={13} color="#ffffff" />
-                        <Text style={styles.ratingText}>{vendor.rating || 4.8}</Text>
-                      </View>
+                      {vendor.rating && typeof vendor.rating === 'number' && vendor.rating > 0 ? (
+                        <View style={styles.ratingBox}>
+                          <Ionicons name="star" size={13} color="#ffffff" />
+                          <Text style={styles.ratingText}>{Number(vendor.rating).toFixed(1)}</Text>
+                        </View>
+                      ) : null}
                     </View>
 
                     <Text style={styles.storeType}>
