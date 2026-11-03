@@ -174,9 +174,9 @@ export const getAdminData = async (req, res) => {
     const [appsResult, jobsResult, usersResult, inqResult, vendorsResult] = await Promise.allSettled([
       canAccessPartners ? Application.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
       canAccessJobs ? JobApplication.find().sort({ appliedAt: -1 }).lean() : Promise.resolve([]),
-      canAccessUsers ? User.find({}, '-password').sort({ _id: -1 }).lean() : Promise.resolve([]),
+      canAccessUsers ? User.find({}, '-password -passwordHash -refreshToken -otp').sort({ _id: -1 }).lean() : Promise.resolve([]),
       canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
-      canAccessPartners ? Vendor.find().sort({ createdAt: -1 }).lean() : Promise.resolve([])
+      canAccessPartners ? Vendor.find({}, '-passwordHash -password').sort({ createdAt: -1 }).lean() : Promise.resolve([])
     ]);
 
     const queryErrors = {};
@@ -238,32 +238,47 @@ export const getAdminData = async (req, res) => {
       ...j,
       id: j.id || String(j._id)
     }));
-    const users = rawUsers.length > 0 ? rawUsers : [...getMemoryUsers()].map(({ password, ...u }) => u).reverse();
+    const users = (rawUsers.length > 0 ? rawUsers : [...getMemoryUsers()]).map(({ password, passwordHash, ...u }) => u).reverse();
     const contactInquiries = rawInquiries.length > 0 ? rawInquiries : [...getMemoryInquiries()].reverse();
 
-    let mergedPartners = applications.map(a => ({
+    const formattedWebsiteApps = applications.map(a => ({
       ...a,
-      id: a.id || String(a._id)
+      id: a.id || String(a._id),
+      originType: 'WEBSITE_LEAD',
+      sourceLabel: 'Website Application (Lead)',
+      isLoginAccount: false,
+      type: 'partner'
     }));
 
+    let formattedVendors = [];
     if (canAccessPartners && Array.isArray(rawVendors) && rawVendors.length > 0) {
-      const vendorApps = rawVendors.map(v => ({
-        id: String(v._id),
-        _id: v._id,
-        fullName: `${v.ownerName || 'Vendor'} (${v.storeName || 'Store'})`,
-        phone: v.phone || '',
-        categoryId: v.storeType || 'GROCERY',
-        district: v.address?.city || '',
-        state: v.address?.state || '',
-        status: (v.isApproved && v.isActive) ? 'APPROVED' : 'RECEIVED',
-        isApproved: Boolean(v.isApproved),
-        isActive: Boolean(v.isActive),
-        isOpen: Boolean(v.isOpen),
-        type: 'partner',
-        createdAt: v.createdAt || new Date()
-      }));
-      mergedPartners = [...vendorApps, ...mergedPartners];
+      formattedVendors = rawVendors.map(v => {
+        const { passwordHash, password, ...safeVendor } = v;
+        return {
+          ...safeVendor,
+          id: String(v._id),
+          _id: v._id,
+          fullName: `${v.ownerName || 'Vendor'} (${v.storeName || 'Store'})`,
+          ownerName: v.ownerName,
+          storeName: v.storeName,
+          phone: v.phone || '',
+          categoryId: v.storeType || 'GROCERY',
+          district: v.address?.city || '',
+          state: v.address?.state || '',
+          status: (v.isApproved && v.isActive) ? 'APPROVED' : 'RECEIVED',
+          isApproved: Boolean(v.isApproved),
+          isActive: Boolean(v.isActive),
+          isOpen: Boolean(v.isOpen),
+          originType: 'VENDOR_ACCOUNT',
+          sourceLabel: 'Partner App Store (Vendor Account)',
+          isLoginAccount: true,
+          type: 'vendor',
+          createdAt: v.createdAt || new Date()
+        };
+      });
     }
+
+    const mergedPartners = [...formattedVendors, ...formattedWebsiteApps];
 
     return res.json({
       success: true,
@@ -327,18 +342,32 @@ export const updateApplicationStatus = async (req, res) => {
             vendorDoc.isOpen = false;
           }
           await vendorDoc.save();
-          return res.json({ success: true, message: `Status updated to ${status}` });
+          return res.json({
+            success: true,
+            isLoginAccount: true,
+            originType: 'VENDOR_ACCOUNT',
+            message: status === 'APPROVED'
+              ? 'Partner store approved. Vendor can now log in to the Partner App.'
+              : 'Partner store application rejected.'
+          });
         }
       }
       const resObj = await Application.findOneAndUpdate({ id }, { status });
-      if (resObj) updated = true;
+      if (resObj) {
+        return res.json({
+          success: true,
+          isLoginAccount: false,
+          originType: 'WEBSITE_LEAD',
+          message: status === 'APPROVED'
+            ? 'Website application lead marked as APPROVED. (Note: Lead is an inquiry only, not a login-enabled vendor account. Partner must register via Partner App to create an active store).'
+            : `Website lead status marked as ${status}.`
+        });
+      }
     } else if (type === 'job') {
       const resObj = await JobApplication.findOneAndUpdate({ id }, { status });
-      if (resObj) updated = true;
-    }
-
-    if (updated) {
-      return res.json({ success: true, message: `Status updated to ${status}` });
+      if (resObj) {
+        return res.json({ success: true, message: `Status updated to ${status}` });
+      }
     }
   } catch (error) {
     // fallback

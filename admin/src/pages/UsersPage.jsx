@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import { Navigate } from 'react-router-dom';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, UserCheck } from 'lucide-react';
 import { adminFetch } from '../api';
 
 export default function UsersPage() {
@@ -89,24 +89,26 @@ export default function UsersPage() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>Name</th>
+                <th style={styles.th}>Customer Name</th>
                 <th style={styles.th}>Phone</th>
-                <th style={styles.th}>Password</th>
-                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Account Role</th>
+                <th style={styles.th}>Account Status</th>
               </tr>
             </thead>
             <tbody>
               {users.map((user, idx) => (
                 <tr key={user.id || user._id || idx} style={styles.tr}>
                   <td style={styles.td}>
-                    <div style={{ fontWeight: '500', color: '#0f172a' }}>{user.name}</div>
+                    <div style={{ fontWeight: '500', color: '#0f172a' }}>{user.name || 'Customer'}</div>
                   </td>
                   <td style={styles.td}>{user.phone}</td>
                   <td style={styles.td}>
-                     <span style={styles.pwdPill}>Hidden</span>
+                     <span style={styles.rolePill}>{user.role || 'CUSTOMER'}</span>
                   </td>
                   <td style={styles.td}>
-                    <span style={styles.activePill}>Active</span>
+                    <span style={styles.activePill}>
+                      <UserCheck size={12} style={{ marginRight: '4px' }} /> Active
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -132,6 +134,6 @@ const styles = {
   th: { padding: '16px 24px', fontSize: '13px', fontWeight: '500', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' },
   tr: { borderBottom: '1px solid #f1f5f9' },
   td: { padding: '16px 24px', fontSize: '15px', color: '#334155' },
-  activePill: { display: 'inline-block', backgroundColor: '#dcfce7', color: '#16a34a', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500' },
-  pwdPill: { display: 'inline-block', backgroundColor: '#f1f5f9', color: '#94a3b8', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500' }
+  activePill: { display: 'inline-flex', alignItems: 'center', backgroundColor: '#dcfce7', color: '#16a34a', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500' },
+  rolePill: { display: 'inline-block', backgroundColor: '#f1f5f9', color: '#475569', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500' }
 };
