@@ -62,6 +62,7 @@ GoogleService-Info.plist
 **/*serviceAccount*.json
 
 # Backups and temporary test generators
+server/backups/
 *.backup-*
 **/*.backup-*
 *.backup
