@@ -31,14 +31,5 @@ export const isAllowedClientOrigin = (origin) => {
     ...getClientOrigins()
   ];
 
-  if (allowed.includes(origin)) {
-    return true;
-  }
-
-  // Allow official S-farmart / Farmart frontend services on onrender.com
-  if (/^https:\/\/(sfarmart|farm-?mart|farmart)(-[a-z0-9]+)*\.onrender\.com$/.test(origin)) {
-    return true;
-  }
-
-  return false;
+  return allowed.includes(origin);
 };

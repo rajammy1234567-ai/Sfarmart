@@ -17,6 +17,7 @@ describe('Admin CORS Policy Verification', () => {
   test('rejects unauthorized external origins', () => {
     assert.equal(isAllowedClientOrigin('https://malicious-site.com'), false);
     assert.equal(isAllowedClientOrigin('https://farm-mart-admin.evil.com'), false);
+    assert.equal(isAllowedClientOrigin('https://unlisted-render-app.onrender.com'), false);
     assert.equal(isAllowedClientOrigin('http://localhost:9999'), false);
   });
 
