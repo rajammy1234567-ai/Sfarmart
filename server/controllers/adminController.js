@@ -20,26 +20,30 @@ export const seedAdmin = async () => {
   try {
     const count = await Admin.countDocuments();
     if (count === 0) {
-      const initUsername = process.env.ADMIN_INIT_USERNAME;
+      const initUsername = process.env.ADMIN_INIT_USERNAME?.trim();
       const initPassword = process.env.ADMIN_INIT_PASSWORD;
 
       if (initUsername && initPassword) {
         const hashedPassword = await bcrypt.hash(initPassword, 10);
-        await Admin.create({
+        const admin = await Admin.create({
           id: `admin-${Date.now()}`,
           username: initUsername,
           password: hashedPassword,
           role: 'superadmin',
           name: process.env.ADMIN_INIT_NAME || 'System Administrator',
-          access: ['users', 'partners', 'riders', 'jobs']
+          access: ['users', 'partners', 'riders', 'jobs', 'categories']
         });
         console.log('👑 Initial Administrator provisioned from environment variables.');
+        return { created: true, username: admin.username, role: admin.role, id: admin.id };
       } else {
         console.log('ℹ️ No admin accounts exist. Set ADMIN_INIT_USERNAME and ADMIN_INIT_PASSWORD in environment to bootstrap.');
+        return { created: false, reason: 'MISSING_INIT_CREDENTIALS' };
       }
     }
+    return { created: false, reason: 'EXISTING_ACCOUNTS_PRESERVED', count };
   } catch (err) {
     console.warn('Admin bootstrap check error:', err.message);
+    return { created: false, error: err.message };
   }
 };
 

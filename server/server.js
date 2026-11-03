@@ -269,7 +269,10 @@ async function startServer() {
   const connected = await connectDB();
   if (!connected) throw new Error('Database required to start backend');
   const isStaging = process.env.STAGING_MODE === 'true' || process.env.NODE_ENV === 'staging';
-  if (!isStaging) await seedAdmin();
+  const hasInitCredentials = Boolean(
+    process.env.ADMIN_INIT_USERNAME?.trim() && process.env.ADMIN_INIT_PASSWORD
+  );
+  if (!isStaging || hasInitCredentials) await seedAdmin();
   httpServer.listen(PORT, () => {
     console.log(`Farmart backend listening on port ${PORT}`);
     startPushReceiptWorker({ intervalMs: Number(process.env.RECEIPT_WORKER_INTERVAL_MS) || 2000 });

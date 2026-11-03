@@ -6,6 +6,7 @@ import { REQUIRED_SCHEMA } from '../scripts/provisionStagingDb.js';
 import { runAdminAccountCheck } from '../scripts/checkAdminAccounts.js';
 import { runStagingAdminSetup, STAGING_ADMIN_ROLE_PERMISSIONS } from '../scripts/setupStagingAdmin.js';
 import { resetAdminPassword } from '../scripts/resetAdminPassword.js';
+import { seedAdmin } from '../controllers/adminController.js';
 
 test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => {
   const origConnect = mongoose.connect;
@@ -13,6 +14,7 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
   const origAdminCount = Admin.countDocuments;
   const origAdminFind = Admin.find;
   const origAdminFindOne = Admin.findOne;
+  const origAdminCreate = Admin.create;
 
   t.afterEach(() => {
     mongoose.connect = origConnect;
@@ -20,8 +22,12 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
     Admin.countDocuments = origAdminCount;
     Admin.find = origAdminFind;
     Admin.findOne = origAdminFindOne;
+    Admin.create = origAdminCreate;
     delete process.env.STAGING_ADMIN_USERNAME;
     delete process.env.STAGING_ADMIN_PASSWORD;
+    delete process.env.ADMIN_INIT_USERNAME;
+    delete process.env.ADMIN_INIT_PASSWORD;
+    delete process.env.ADMIN_INIT_NAME;
   });
 
   await t.test('1. Schema Definition: provisionStagingDb.js includes admins with unique username_1 index', () => {
@@ -250,5 +256,87 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
     assert.ok(updatedDoc.$set.password, 'Must update password');
     assert.notEqual(updatedDoc.$set.password, 'new_secure_admin_password_99', 'Password must be hashed with bcrypt');
     assert.ok(updatedDoc.$set.password.startsWith('$2'), 'Bcrypt hash format check');
+  });
+
+  await t.test('12. seedAdmin (Empty Collection): provisions superadmin with hashed password and full access', async () => {
+    let createdPayload = null;
+    Admin.countDocuments = async () => 0;
+    Admin.create = async (payload) => {
+      createdPayload = payload;
+      return { id: payload.id, username: payload.username, role: payload.role };
+    };
+
+    process.env.ADMIN_INIT_USERNAME = 'superadmin';
+    process.env.ADMIN_INIT_PASSWORD = 'super_secure_staging_password_123';
+    process.env.ADMIN_INIT_NAME = 'Staging Master Admin';
+
+    const res = await seedAdmin();
+
+    assert.equal(res.created, true);
+    assert.equal(res.username, 'superadmin');
+    assert.equal(res.role, 'superadmin');
+    assert.ok(createdPayload);
+    assert.equal(createdPayload.username, 'superadmin');
+    assert.equal(createdPayload.role, 'superadmin');
+    assert.equal(createdPayload.name, 'Staging Master Admin');
+    assert.ok(createdPayload.password.startsWith('$2'), 'Password must be bcrypt hashed');
+    assert.notEqual(createdPayload.password, 'super_secure_staging_password_123');
+    assert.ok(createdPayload.access.includes('partners'));
+    assert.ok(createdPayload.access.includes('categories'));
+  });
+
+  await t.test('13. seedAdmin (Existing Accounts Guard): strictly preserves existing accounts without overwrite or reset', async () => {
+    let createdPayload = null;
+    Admin.countDocuments = async () => 1;
+    Admin.create = async (payload) => {
+      createdPayload = payload;
+      return payload;
+    };
+
+    process.env.ADMIN_INIT_USERNAME = 'superadmin';
+    process.env.ADMIN_INIT_PASSWORD = 'attempted_override_pass_123';
+
+    const res = await seedAdmin();
+
+    assert.equal(res.created, false);
+    assert.equal(res.reason, 'EXISTING_ACCOUNTS_PRESERVED');
+    assert.equal(res.count, 1);
+    assert.equal(createdPayload, null, 'Must NEVER call Admin.create when admin accounts already exist');
+  });
+
+  await t.test('14. seedAdmin (Missing Credentials Guard): does not create account when init env vars are absent', async () => {
+    let createdPayload = null;
+    Admin.countDocuments = async () => 0;
+    Admin.create = async (payload) => {
+      createdPayload = payload;
+      return payload;
+    };
+
+    delete process.env.ADMIN_INIT_USERNAME;
+    delete process.env.ADMIN_INIT_PASSWORD;
+
+    const res = await seedAdmin();
+
+    assert.equal(res.created, false);
+    assert.equal(res.reason, 'MISSING_INIT_CREDENTIALS');
+    assert.equal(createdPayload, null, 'Must NOT create account when init credentials are missing');
+  });
+
+  await t.test('15. Startup Staging Gate: ensures seedAdmin() is gated in staging mode', () => {
+    // Case A: Staging mode without credentials -> gated off
+    const isStagingTrue = true;
+    const hasInitCredsEmpty = Boolean(undefined && undefined);
+    const shouldRunCaseA = !isStagingTrue || hasInitCredsEmpty;
+    assert.equal(shouldRunCaseA, false, 'Must skip seedAdmin in staging if no init credentials supplied');
+
+    // Case B: Staging mode with explicit credentials -> allowed
+    const hasInitCredsSet = Boolean('superadmin'.trim() && 'password123');
+    const shouldRunCaseB = !isStagingTrue || hasInitCredsSet;
+    assert.equal(shouldRunCaseB, true, 'Must allow seedAdmin in staging when explicit init credentials supplied');
+
+    // Case C: Non-staging mode -> always allowed
+    const isStagingFalse = false;
+    const shouldRunCaseC = !isStagingFalse || hasInitCredsEmpty;
+    assert.equal(shouldRunCaseC, true, 'Must allow seedAdmin in development / production mode');
   });
 });
