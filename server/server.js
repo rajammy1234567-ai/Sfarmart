@@ -44,6 +44,7 @@ import connectDB from './config/db.js';
 import { seedAdmin } from './controllers/adminController.js';
 import { initSocket } from './socket/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { isAllowedClientOrigin } from './utils/corsPolicy.js';
 import { recoverPendingPushReceipts, startPushReceiptWorker, stopPushReceiptWorker } from './services/notify.js';
 import { recoverPendingDispatches } from './services/riderAssignmentService.js';
 
@@ -78,40 +79,12 @@ const io = initSocket(httpServer);
 app.use(helmet());
 
 // CORS with allowlist (placed before body parsing & routes so OPTIONS preflight resolves immediately)
-const clientOrigins = process.env.CLIENT_ORIGINS
-  ? process.env.CLIENT_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-  : [];
-
-const isDevOrStaging =
-  process.env.NODE_ENV !== 'production' ||
-  process.env.STAGING_MODE === 'true' ||
-  process.env.NODE_ENV === 'staging';
-
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile native apps, curl, server-to-server)
-      if (!origin) return callback(null, true);
-
-      // In development / staging: allow local admin web (Vite on 5173-5179) and local apps (8081-8085)
-      if (isDevOrStaging) {
-        if (/^http:\/\/(localhost|127\.0\.0\.1):(517[3-9]|808[1-5])$/.test(origin)) {
-          return callback(null, true);
-        }
-      }
-
-      // Explicitly configured client origins (production and custom staging domains)
-      const allowedOrigins = [
-        'https://farm-mart-admin.onrender.com',
-        'https://farmart-admin.onrender.com',
-        'https://farm-mart.onrender.com',
-        ...clientOrigins
-      ];
-      if (allowedOrigins.includes(origin)) {
+      if (isAllowedClientOrigin(origin)) {
         return callback(null, true);
       }
-
-      // Reject all other origins
       return callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],

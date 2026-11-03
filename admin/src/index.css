@@ -32,6 +32,7 @@ a {
 
   .admin-mobile-header {
     display: flex !important;
+    z-index: 10000 !important;
   }
 
   .admin-sidebar {

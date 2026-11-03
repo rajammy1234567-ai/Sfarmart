@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { 
   ShieldCheck, 
@@ -13,7 +13,9 @@ import {
   Server, 
   CheckCircle,
   Clock,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { adminFetch } from '../api';
@@ -21,8 +23,11 @@ import { adminFetch } from '../api';
 export default function DashboardPage() {
   const { admin } = useAuth();
   const [data, setData] = useState(null);
-  const [systemHealth, setSystemHealth] = useState({ api: 'ONLINE', db: 'CONNECTED', responseTime: '42ms' });
-  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [partialErrors, setPartialErrors] = useState(null);
+  const inFlightRef = useRef(false);
+
   // Create Sub Admin State
   const [newSubAdmin, setNewSubAdmin] = useState({
     name: '',
@@ -31,23 +36,47 @@ export default function DashboardPage() {
     access: []
   });
   const [createMsg, setCreateMsg] = useState('');
+  const [creatingSubAdmin, setCreatingSubAdmin] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (signal) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    if (!data) setLoading(true);
+
     try {
-      const response = await adminFetch('/admin/data');
-      const res = await response.json();
-      if (res.success) {
+      const response = await adminFetch('/admin/data', { signal });
+      const res = await response.json().catch(() => null);
+
+      if (response.ok && res?.success) {
         setData(res.data);
+        setError(null);
+        setPartialErrors(res.partialErrors || null);
+      } else {
+        const errorMsg = res?.message || `Server responded with status ${response.status}`;
+        setError(errorMsg);
       }
     } catch (e) {
+      if (e.name === 'AbortError') return;
       console.error('Error fetching dashboard data:', e);
+      setError(e.message || 'Network error fetching dashboard data');
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 15000); // Auto refresh every 15s
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    fetchDashboardData(controller.signal);
+
+    const interval = setInterval(() => {
+      fetchDashboardData(controller.signal);
+    }, 15000);
+
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleAccessToggle = (module) => {
@@ -60,6 +89,9 @@ export default function DashboardPage() {
 
   const handleCreateSubAdmin = async (e) => {
     e.preventDefault();
+    if (creatingSubAdmin) return;
+    setCreatingSubAdmin(true);
+
     try {
       const response = await adminFetch('/admin/create-subadmin', {
         method: 'POST',
@@ -72,14 +104,45 @@ export default function DashboardPage() {
         setNewSubAdmin({ name: '', username: '', password: '', access: [] });
         setTimeout(() => setCreateMsg(''), 4000);
       } else {
-        alert(res.message);
+        alert(res.message || 'Failed to create Sub Admin');
       }
     } catch (e) {
-      alert('Error creating Sub Admin');
+      alert('Error creating Sub Admin: ' + (e.message || 'Network error'));
+    } finally {
+      setCreatingSubAdmin(false);
     }
   };
 
-  if (!data) return <div style={styles.loading}>Loading Farmart Enterprise Control Center...</div>;
+  // Initial loading state (before any data has arrived)
+  if (!data && loading && !error) {
+    return (
+      <div style={styles.loadingContainer}>
+        <RefreshCw size={28} className="spin" color="#10b981" style={{ animation: 'spin 1s linear infinite' }} />
+        <div style={styles.loadingText}>Loading Farmart Enterprise Control Center...</div>
+      </div>
+    );
+  }
+
+  // Actionable error state if initial load failed
+  if (!data && error) {
+    return (
+      <div style={styles.page} className="responsive-page-padding">
+        <div style={styles.errorCard}>
+          <AlertTriangle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
+          <h2 style={styles.errorTitle}>Dashboard Data Unavailable</h2>
+          <p style={styles.errorMessage}>{error}</p>
+          <button 
+            style={styles.retryBtn} 
+            onClick={() => fetchDashboardData()}
+            disabled={loading}
+          >
+            <RefreshCw size={16} />
+            <span>{loading ? 'Retrying...' : 'Retry Connection'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const accessOptions = [
     { id: 'users', label: 'App Users Management' },
@@ -90,6 +153,29 @@ export default function DashboardPage() {
 
   return (
     <div style={styles.page} className="responsive-page-padding">
+      {/* Background sync error alert (if data is stale) */}
+      {error && data && (
+        <div style={styles.warningBanner}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={18} color="#d97706" />
+            <span>Auto-sync alert: {error}. Showing last loaded data.</span>
+          </div>
+          <button style={styles.miniRetryBtn} onClick={() => fetchDashboardData()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Partial module errors notification */}
+      {partialErrors && (
+        <div style={styles.warningBanner}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={18} color="#d97706" />
+            <span>Notice: Some data modules encountered database errors: {Object.keys(partialErrors).join(', ')}</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header style={styles.header}>
         <div>
@@ -97,7 +183,7 @@ export default function DashboardPage() {
             <span style={styles.liveBadge}><CheckCircle size={12} /> System Operational</span>
             <span style={styles.timeBadge}><Clock size={12} /> Auto-Sync Active (15s)</span>
           </div>
-          <h1 style={styles.title}>Welcome back, {admin.name}</h1>
+          <h1 style={styles.title}>Welcome back, {admin?.name || 'Administrator'}</h1>
           <p style={styles.subtitle}>Farmart Enterprise Command Center • Real-time Monitoring & Access Control</p>
         </div>
       </header>
@@ -126,7 +212,7 @@ export default function DashboardPage() {
               <span style={styles.metricLabel}>Inquiries & Leads</span>
               <div style={{ ...styles.iconWrapper, backgroundColor: '#dcfce7' }}><MessageSquare size={20} color="#15803d" /></div>
             </div>
-            <div style={styles.metricValue}>{data.contactInquiries?.length || 0}</div>
+            <div style={styles.metricValue}>{data?.contactInquiries?.length || 0}</div>
             <div style={styles.metricFooter}>
               <span>View all inquiries</span>
               <ArrowRight size={14} />
@@ -140,7 +226,7 @@ export default function DashboardPage() {
               <span style={styles.metricLabel}>Partner Applications</span>
               <div style={{ ...styles.iconWrapper, backgroundColor: '#e0f2fe' }}><Building2 size={20} color="#0369a1" /></div>
             </div>
-            <div style={styles.metricValue}>{data.applications?.length || 0}</div>
+            <div style={styles.metricValue}>{data?.applications?.length || 0}</div>
             <div style={styles.metricFooter}>
               <span>Review partner requests</span>
               <ArrowRight size={14} />
@@ -154,7 +240,7 @@ export default function DashboardPage() {
               <span style={styles.metricLabel}>Job Candidates</span>
               <div style={{ ...styles.iconWrapper, backgroundColor: '#fef3c7' }}><Briefcase size={20} color="#b45309" /></div>
             </div>
-            <div style={styles.metricValue}>{data.jobApplications?.length || 0}</div>
+            <div style={styles.metricValue}>{data?.jobApplications?.length || 0}</div>
             <div style={styles.metricFooter}>
               <span>Manage HR applications</span>
               <ArrowRight size={14} />
@@ -168,7 +254,7 @@ export default function DashboardPage() {
               <span style={styles.metricLabel}>Registered Users</span>
               <div style={{ ...styles.iconWrapper, backgroundColor: '#f3e8ff' }}><Users size={20} color="#7e22ce" /></div>
             </div>
-            <div style={styles.metricValue}>{data.users?.length || 0}</div>
+            <div style={styles.metricValue}>{data?.users?.length || 0}</div>
             <div style={styles.metricFooter}>
               <span>Customer app accounts</span>
               <ArrowRight size={14} />
@@ -178,7 +264,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Super Admin Control Panel */}
-      {admin.role === 'superadmin' && (
+      {admin?.role === 'superadmin' && (
         <div style={styles.adminControlPanel}>
           <div style={styles.panelHeader}>
             <ShieldCheck size={26} color="#10b981" />
@@ -223,9 +309,9 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <button type="submit" style={styles.submitBtn}>
+            <button type="submit" style={styles.submitBtn} disabled={creatingSubAdmin}>
               <Plus size={18} />
-              <span>Create Sub-Admin Staff Account</span>
+              <span>{creatingSubAdmin ? 'Creating Staff Account...' : 'Create Sub-Admin Staff Account'}</span>
             </button>
           </form>
         </div>
@@ -236,7 +322,14 @@ export default function DashboardPage() {
 
 const styles = {
   page: { padding: '40px', maxWidth: '1280px', margin: '0 auto', width: '100%' },
-  loading: { padding: '60px', fontSize: '18px', color: '#64748b', fontWeight: '500', textAlign: 'center' },
+  loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '16px' },
+  loadingText: { fontSize: '17px', color: '#64748b', fontWeight: '500' },
+  errorCard: { backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #fee2e2', padding: '48px 24px', textAlign: 'center', maxWidth: '540px', margin: '40px auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
+  errorTitle: { fontSize: '20px', fontWeight: '600', color: '#991b1b', marginBottom: '8px' },
+  errorMessage: { fontSize: '14px', color: '#64748b', marginBottom: '24px', lineHeight: '1.5' },
+  retryBtn: { display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: '#10b981', color: '#ffffff', padding: '10px 20px', borderRadius: '10px', border: 'none', fontSize: '14px', fontWeight: '500', cursor: 'pointer' },
+  warningBanner: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '12px 18px', borderRadius: '12px', marginBottom: '24px', fontSize: '14px' },
+  miniRetryBtn: { backgroundColor: '#ffffff', border: '1px solid #d97706', color: '#b45309', padding: '4px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' },
   header: { marginBottom: '24px' },
   badgeRow: { display: 'flex', gap: '12px', marginBottom: '12px' },
   liveBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#dcfce7', color: '#15803d', fontSize: '12px', fontWeight: '500', padding: '4px 10px', borderRadius: '20px' },

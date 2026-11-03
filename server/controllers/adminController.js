@@ -170,61 +170,118 @@ export const getAdminData = async (req, res) => {
     const canAccessUsers = (isSuperAdmin || subAdminAccess.includes('users')) && (!requestedModule || requestedModule === 'users');
     const canAccessInquiries = (isSuperAdmin || subAdminAccess.includes('inquiries')) && (!requestedModule || requestedModule === 'inquiries');
 
-    const [applications, jobApplications, users, contactInquiries, vendors] = await Promise.all([
-      canAccessPartners ? Application.find().sort({ createdAt: -1 }) : Promise.resolve([]),
-      canAccessJobs ? JobApplication.find().sort({ appliedAt: -1 }) : Promise.resolve([]),
-      canAccessUsers ? User.find({}, '-password').sort({ _id: -1 }) : Promise.resolve([]),
-      canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }) : Promise.resolve([]),
-      canAccessPartners ? Vendor.find().sort({ createdAt: -1 }) : Promise.resolve([])
+    // Query collections independently via Promise.allSettled with .lean() to prevent single-query cascading failures
+    const [appsResult, jobsResult, usersResult, inqResult, vendorsResult] = await Promise.allSettled([
+      canAccessPartners ? Application.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
+      canAccessJobs ? JobApplication.find().sort({ appliedAt: -1 }).lean() : Promise.resolve([]),
+      canAccessUsers ? User.find({}, '-password').sort({ _id: -1 }).lean() : Promise.resolve([]),
+      canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
+      canAccessPartners ? Vendor.find().sort({ createdAt: -1 }).lean() : Promise.resolve([])
     ]);
 
-    let mergedPartners = applications.length > 0 ? applications : getMemoryApplications().reverse();
-    if (canAccessPartners && Array.isArray(vendors) && vendors.length > 0) {
-      const vendorApps = vendors.map(v => ({
+    const queryErrors = {};
+    if (canAccessPartners && appsResult.status === 'rejected') {
+      console.error('Failed to query applications:', appsResult.reason?.message || appsResult.reason);
+      queryErrors.partners = appsResult.reason?.message || 'Failed to query partner applications';
+    }
+    if (canAccessJobs && jobsResult.status === 'rejected') {
+      console.error('Failed to query job applications:', jobsResult.reason?.message || jobsResult.reason);
+      queryErrors.jobs = jobsResult.reason?.message || 'Failed to query job applications';
+    }
+    if (canAccessUsers && usersResult.status === 'rejected') {
+      console.error('Failed to query users:', usersResult.reason?.message || usersResult.reason);
+      queryErrors.users = usersResult.reason?.message || 'Failed to query users';
+    }
+    if (canAccessInquiries && inqResult.status === 'rejected') {
+      console.error('Failed to query contact inquiries:', inqResult.reason?.message || inqResult.reason);
+      queryErrors.inquiries = inqResult.reason?.message || 'Failed to query contact inquiries';
+    }
+    if (canAccessPartners && vendorsResult.status === 'rejected') {
+      console.error('Failed to query vendors:', vendorsResult.reason?.message || vendorsResult.reason);
+    }
+
+    // If client requested a specific module and that query failed, fail explicitly without swallowing
+    if (requestedModule && queryErrors[requestedModule]) {
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        code: 'MODULE_QUERY_ERROR',
+        message: `Database error querying ${requestedModule}: ${queryErrors[requestedModule]}`
+      });
+    }
+
+    const permittedModules = [
+      canAccessPartners ? 'partners' : null,
+      canAccessJobs ? 'jobs' : null,
+      canAccessUsers ? 'users' : null,
+      canAccessInquiries ? 'inquiries' : null
+    ].filter(Boolean);
+
+    if (permittedModules.length > 0 && permittedModules.every(m => queryErrors[m])) {
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        code: 'AGGREGATION_FAILED',
+        message: 'Database queries failed for all permitted modules',
+        errors: queryErrors
+      });
+    }
+
+    const rawApps = appsResult.status === 'fulfilled' ? appsResult.value : [];
+    const rawJobs = jobsResult.status === 'fulfilled' ? jobsResult.value : [];
+    const rawUsers = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    const rawInquiries = inqResult.status === 'fulfilled' ? inqResult.value : [];
+    const rawVendors = vendorsResult.status === 'fulfilled' ? vendorsResult.value : [];
+
+    const applications = rawApps.length > 0 ? rawApps : [...getMemoryApplications()].reverse();
+    const jobApplications = (rawJobs.length > 0 ? rawJobs : [...getMemoryJobs()].reverse()).map(j => ({
+      ...j,
+      id: j.id || String(j._id)
+    }));
+    const users = rawUsers.length > 0 ? rawUsers : [...getMemoryUsers()].map(({ password, ...u }) => u).reverse();
+    const contactInquiries = rawInquiries.length > 0 ? rawInquiries : [...getMemoryInquiries()].reverse();
+
+    let mergedPartners = applications.map(a => ({
+      ...a,
+      id: a.id || String(a._id)
+    }));
+
+    if (canAccessPartners && Array.isArray(rawVendors) && rawVendors.length > 0) {
+      const vendorApps = rawVendors.map(v => ({
         id: String(v._id),
         _id: v._id,
-        fullName: `${v.ownerName} (${v.storeName})`,
-        phone: v.phone,
-        categoryId: v.storeType,
+        fullName: `${v.ownerName || 'Vendor'} (${v.storeName || 'Store'})`,
+        phone: v.phone || '',
+        categoryId: v.storeType || 'GROCERY',
         district: v.address?.city || '',
         state: v.address?.state || '',
         status: (v.isApproved && v.isActive) ? 'APPROVED' : 'RECEIVED',
-        isApproved: v.isApproved,
-        isActive: v.isActive,
-        isOpen: v.isOpen,
+        isApproved: Boolean(v.isApproved),
+        isActive: Boolean(v.isActive),
+        isOpen: Boolean(v.isOpen),
         type: 'partner',
-        createdAt: v.createdAt
+        createdAt: v.createdAt || new Date()
       }));
       mergedPartners = [...vendorApps, ...mergedPartners];
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         applications: canAccessPartners ? mergedPartners : [],
-        jobApplications: canAccessJobs ? (jobApplications.length > 0 ? jobApplications : getMemoryJobs().reverse()) : [],
-        users: canAccessUsers ? (users.length > 0 ? users : getMemoryUsers().map(({ password, ...u }) => u).reverse()) : [],
-        contactInquiries: canAccessInquiries ? (contactInquiries.length > 0 ? contactInquiries : getMemoryInquiries().reverse()) : []
-      }
+        jobApplications: canAccessJobs ? jobApplications : [],
+        users: canAccessUsers ? users : [],
+        contactInquiries: canAccessInquiries ? contactInquiries : []
+      },
+      ...(Object.keys(queryErrors).length > 0 ? { partialErrors: queryErrors } : {})
     });
   } catch (error) {
-    const isSuperAdmin = req.user?.adminRole === 'superadmin';
-    const subAdminAccess = Array.isArray(req.user?.access) ? req.user.access : [];
-    const requestedModule = req.query?.module;
-
-    const canAccessPartners = (isSuperAdmin || subAdminAccess.includes('partners')) && (!requestedModule || requestedModule === 'partners');
-    const canAccessJobs = (isSuperAdmin || subAdminAccess.includes('jobs')) && (!requestedModule || requestedModule === 'jobs');
-    const canAccessUsers = (isSuperAdmin || subAdminAccess.includes('users')) && (!requestedModule || requestedModule === 'users');
-    const canAccessInquiries = (isSuperAdmin || subAdminAccess.includes('inquiries')) && (!requestedModule || requestedModule === 'inquiries');
-
-    res.json({
-      success: true,
-      data: {
-        applications: canAccessPartners ? getMemoryApplications().reverse() : [],
-        jobApplications: canAccessJobs ? getMemoryJobs().reverse() : [],
-        users: canAccessUsers ? getMemoryUsers().map(({ password, ...u }) => u).reverse() : [],
-        contactInquiries: canAccessInquiries ? getMemoryInquiries().reverse() : []
-      }
+    console.error('getAdminData unexpected error:', error);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      code: 'SERVER_ERROR',
+      message: error.message || 'Internal error retrieving admin data'
     });
   }
 };

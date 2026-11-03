@@ -32,6 +32,9 @@ export const handleAuthFailure = () => {
  * Shared authenticated fetch helper for admin API requests.
  * Automatically attaches `Authorization: Bearer <stored admin token>`.
  * On 401 Unauthorized responses, clears session and redirects to /login.
+ *
+ * Supports timeout (default: 15s) and optional caller AbortSignal to
+ * cancel in-flight requests on route transition or component unmount.
  */
 export const adminFetch = async (endpoint, options = {}) => {
   const admin = getStoredAdmin();
@@ -49,14 +52,41 @@ export const adminFetch = async (endpoint, options = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Setup timeout & cancellation
+  const timeoutMs = options.timeout ?? 15000;
+  const controller = new AbortController();
+  const callerSignal = options.signal;
 
-  if (response.status === 401) {
-    handleAuthFailure();
+  let callerAbortListener = null;
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort(callerSignal.reason);
+    } else {
+      callerAbortListener = () => controller.abort(callerSignal.reason);
+      callerSignal.addEventListener('abort', callerAbortListener);
+    }
   }
 
-  return response;
+  const timeoutId = timeoutMs > 0 ? setTimeout(() => {
+    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`));
+  }, timeoutMs) : null;
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    if (response.status === 401) {
+      handleAuthFailure();
+    }
+
+    return response;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (callerSignal && callerAbortListener) {
+      callerSignal.removeEventListener('abort', callerAbortListener);
+    }
+  }
 };

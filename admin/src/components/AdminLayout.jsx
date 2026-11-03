@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -18,6 +18,12 @@ import {
 export default function AdminLayout() {
   const { admin, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+
+  // Dismiss mobile drawer and backdrop whenever route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const navigation = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, requiredAccess: 'all' },
@@ -30,27 +36,41 @@ export default function AdminLayout() {
   ];
 
   const hasAccess = (requiredAccess) => {
+    if (!admin) return false;
     if (admin.role === 'superadmin') return true;
     if (requiredAccess === 'all') return true;
     return admin.access?.includes(requiredAccess);
   };
 
+  const closeMenu = () => setMobileMenuOpen(false);
+
   return (
     <div style={styles.layout} className="admin-layout-container">
-      {/* Mobile Top Header */}
+      {/* Mobile Top Header - zIndex: 10000 ensures toggle remains on top */}
       <div style={styles.mobileTopBar} className="admin-mobile-header">
         <div style={styles.sidebarHeaderBrand}>
           <ShieldCheck size={24} color="#10b981" />
           <h2 style={styles.brandMobile}>Farmart Central</h2>
         </div>
-        <button style={styles.hamburgerBtn} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <button 
+          style={styles.hamburgerBtn} 
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        >
           {mobileMenuOpen ? <X size={24} color="#ffffff" /> : <Menu size={24} color="#ffffff" />}
         </button>
       </div>
 
-      {/* Backdrop for Mobile Overlay */}
+      {/* Backdrop for Mobile Overlay - Dismisses on click or touch */}
       {mobileMenuOpen && (
-        <div style={styles.backdrop} onClick={() => setMobileMenuOpen(false)} />
+        <div 
+          style={styles.backdrop} 
+          onClick={closeMenu}
+          onTouchStart={closeMenu}
+          role="button"
+          tabIndex={-1}
+          aria-label="Dismiss menu overlay"
+        />
       )}
 
       {/* Sidebar */}
@@ -64,10 +84,10 @@ export default function AdminLayout() {
         </div>
 
         <div style={styles.adminInfo}>
-          <div style={styles.avatar}>{admin.name ? admin.name.charAt(0) : 'A'}</div>
+          <div style={styles.avatar}>{admin?.name ? admin.name.charAt(0) : 'A'}</div>
           <div>
-            <div style={styles.adminName}>{admin.name}</div>
-            <div style={styles.adminRole}>{admin.role === 'superadmin' ? 'Super Admin' : 'Sub Admin'}</div>
+            <div style={styles.adminName}>{admin?.name || 'Administrator'}</div>
+            <div style={styles.adminRole}>{admin?.role === 'superadmin' ? 'Super Admin' : 'Sub Admin'}</div>
           </div>
         </div>
 
@@ -78,7 +98,7 @@ export default function AdminLayout() {
               <NavLink 
                 key={item.name} 
                 to={item.path}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={closeMenu}
                 style={({isActive}) => ({
                   ...styles.navItem,
                   backgroundColor: isActive ? '#1e293b' : 'transparent',
@@ -93,7 +113,11 @@ export default function AdminLayout() {
           })}
         </nav>
 
-        <button onClick={logout} style={styles.logoutBtn}>
+        <button 
+          onClick={() => { closeMenu(); logout(); }} 
+          style={styles.logoutBtn}
+          aria-label="Logout"
+        >
           <LogOut size={20} />
           <span>Logout</span>
         </button>
@@ -123,7 +147,7 @@ const styles = {
     right: 0,
     height: '60px',
     backgroundColor: '#0f172a',
-    zIndex: 9990,
+    zIndex: 10000,
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '0 20px',
@@ -157,6 +181,7 @@ const styles = {
     bottom: 0,
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     zIndex: 9998,
+    cursor: 'pointer',
     backdropFilter: 'blur(4px)'
   },
   sidebar: {

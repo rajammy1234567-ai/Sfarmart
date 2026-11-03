@@ -1,34 +1,43 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { MessageSquare, Phone, Mail, Clock, RefreshCw, X, User, Calendar, Tag, ExternalLink } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Clock, RefreshCw, X, User, Calendar, ExternalLink, AlertTriangle } from 'lucide-react';
 import { adminFetch } from '../api';
 
 export default function InquiriesPage() {
   const { admin } = useAuth();
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedInquiry, setSelectedInquiry] = useState(null);
 
-  const fetchData = () => {
+  const fetchData = async (signal) => {
     setLoading(true);
-    adminFetch('/admin/data')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setInquiries(data.data.contactInquiries || []);
-        }
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+    setError(null);
+
+    try {
+      const res = await adminFetch('/admin/data?module=inquiries', { signal });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.success) {
+        setInquiries(data.data?.contactInquiries || []);
+      } else {
+        setError(data?.message || `Server returned error (${res.status})`);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.error('Inquiries fetch error:', err);
+      setError(err.message || 'Failed to load inquiries');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, []);
 
   const categories = [
@@ -60,11 +69,27 @@ export default function InquiriesPage() {
           <h1 style={styles.title}>Live Website Inquiries & Leads</h1>
           <p style={styles.subtitle}>Click any inquiry card to view full details, location, and message logs.</p>
         </div>
-        <button style={styles.refreshBtn} onClick={fetchData}>
-          <RefreshCw size={16} />
+        <button style={styles.refreshBtn} onClick={() => fetchData()} disabled={loading}>
+          <RefreshCw size={16} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
           <span>Refresh Leads ({inquiries.length})</span>
         </button>
       </header>
+
+      {/* Actionable Error Alert */}
+      {error && (
+        <div style={styles.errorAlert}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={20} color="#dc2626" />
+            <div>
+              <div style={{ fontWeight: '600', color: '#991b1b' }}>Failed to load website inquiries</div>
+              <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '2px' }}>{error}</div>
+            </div>
+          </div>
+          <button style={styles.retryBtn} onClick={() => fetchData()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div style={styles.filterRow}>
@@ -97,8 +122,11 @@ export default function InquiriesPage() {
       </div>
 
       {loading ? (
-        <div style={styles.loading}>Fetching live lead submissions from database...</div>
-      ) : filtered.length === 0 ? (
+        <div style={styles.loading}>
+          <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} />
+          <div>Fetching live lead submissions from database...</div>
+        </div>
+      ) : filtered.length === 0 && !error ? (
         <div style={styles.emptyCard}>
           <MessageSquare size={48} color="#cbd5e1" style={{ marginBottom: '12px' }} />
           <h3 style={{ margin: '0 0 6px 0', color: '#0f172a' }}>No inquiries found</h3>
@@ -107,10 +135,10 @@ export default function InquiriesPage() {
       ) : (
         <div style={styles.grid}>
           {filtered.map(inq => (
-            <div key={inq.id} style={styles.card} onClick={() => setSelectedInquiry(inq)}>
+            <div key={inq.id || inq._id} style={styles.card} onClick={() => setSelectedInquiry(inq)}>
               <div style={styles.cardHeader}>
                 <div style={styles.typeBadge}>{inq.inquiryType || 'General Inquiry'}</div>
-                <div style={styles.refId}>{inq.id}</div>
+                <div style={styles.refId}>{inq.id || inq._id}</div>
               </div>
 
               <h3 style={styles.userName}>{inq.name}</h3>
@@ -162,7 +190,7 @@ export default function InquiriesPage() {
               <div>
                 <div style={styles.modalBadgeRow}>
                   <span style={styles.typeBadge}>{selectedInquiry.inquiryType || 'General Inquiry'}</span>
-                  <span style={styles.refIdModal}>{selectedInquiry.id}</span>
+                  <span style={styles.refIdModal}>{selectedInquiry.id || selectedInquiry._id}</span>
                 </div>
                 <h2 style={styles.modalTitle}>{selectedInquiry.name}</h2>
               </div>
@@ -238,12 +266,14 @@ const styles = {
   title: { fontSize: '28px', fontWeight: '500', color: '#0f172a', margin: 0 },
   subtitle: { fontSize: '15px', color: '#64748b', marginTop: '6px' },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '14px', fontWeight: '500', color: '#0f172a', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' },
+  errorAlert: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '16px 20px', borderRadius: '12px', marginBottom: '24px' },
+  retryBtn: { backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' },
   filterRow: { marginBottom: '20px' },
   categoryTabs: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
   catTab: { padding: '8px 16px', borderRadius: '20px', border: '1px solid', fontSize: '13px', fontWeight: '500', cursor: 'pointer', transition: 'all 0.15s ease' },
   searchBarBox: { marginBottom: '24px' },
   searchInput: { width: '100%', padding: '14px 20px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '15px', outline: 'none', backgroundColor: '#ffffff', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' },
-  loading: { padding: '40px', fontSize: '16px', color: '#64748b', textAlign: 'center', fontWeight: '500' },
+  loading: { padding: '40px', fontSize: '16px', color: '#64748b', textAlign: 'center', fontWeight: '500', display: 'flex', flexDirection: 'column', alignItems: 'center' },
   emptyCard: { backgroundColor: '#ffffff', padding: '60px', borderRadius: '16px', textAlign: 'center', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' },
   card: { backgroundColor: '#ffffff', borderRadius: '18px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '14px', cursor: 'pointer', transition: 'all 0.2s ease' },
@@ -261,8 +291,6 @@ const styles = {
   timeWrapper: { display: 'flex', alignItems: 'center', gap: '6px' },
   timeText: { fontSize: '12px', color: '#94a3b8', fontWeight: '500' },
   viewBtn: { display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f1f5f9', color: '#0f172a', padding: '8px 14px', borderRadius: '20px', border: 'none', fontSize: '12px', fontWeight: '500', cursor: 'pointer' },
-  
-  /* Modal Overlay Styles */
   modalBackdrop: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' },
   modalContent: { backgroundColor: '#ffffff', borderRadius: '20px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #e2e8f0', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', display: 'flex', flexDirection: 'column' },
   modalHeader: { padding: '24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },

@@ -1,3 +1,4 @@
+import { isAllowedClientOrigin } from '../utils/corsPolicy.js';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
@@ -9,6 +10,12 @@ import { accountLimiter } from './accountLimiter.js';
 const getJwtAccessSecret = () => process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
 export const requireAuth = async (req, res, next) => {
+  const origin = req.headers?.origin;
+  if (origin && isAllowedClientOrigin(origin) && !res.headersSent) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
   try {
     const jwtSecret = getJwtAccessSecret();
     if (!jwtSecret) {
@@ -55,7 +62,8 @@ export const requireAuth = async (req, res, next) => {
     }
 
     // Verify ADMIN roles via authoritative database lookup
-    if (decoded.role === 'ADMIN' || decoded.role === 'superadmin' || decoded.role === 'subadmin') {
+    const normRole = String(decoded.role || '').toLowerCase();
+    if (normRole === 'admin' || normRole === 'superadmin' || normRole === 'subadmin') {
       let adminRecord = null;
       try {
         if (mongoose.Types.ObjectId.isValid(userId)) {
@@ -131,6 +139,14 @@ export const requireAuth = async (req, res, next) => {
       return pathOnly === '/api/auth/account/delete';
     };
 
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(401).json({
+        ok: false,
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Invalid user identifier'
+      });
+    }
     const user = await User.findById(userId);
     if (!user) {
       // Handle retry of committed deletion whose HTTP response was lost over network
