@@ -75,7 +75,8 @@ export async function provisionProductionDatabase(db) {
     collectionsCreated: [],
     collectionsExisting: [],
     indexesCreated: [],
-    indexesExisting: []
+    indexesExisting: [],
+    repairedIndexes: []
   };
 
   // 1. Ensure all collections exist
@@ -88,12 +89,27 @@ export async function provisionProductionDatabase(db) {
     }
   }
 
-  // 2. Ensure all indexes exist
+  // 2. Ensure all indexes exist, repairing affected target indexes if obsolete
   for (const [colName, { indexes }] of Object.entries(FULL_PRODUCTION_SCHEMA)) {
     const col = db.collection(colName);
-    const existingIndexes = await col.indexes();
+    let existingIndexes = await col.indexes();
 
     for (const required of indexes) {
+      // Targeted repair: if target users collection has obsolete sparse email_1 index
+      if (colName === 'users' && required.options.name === 'email_1') {
+        const existingEmailIdx = existingIndexes.find(i => i.name === 'email_1');
+        if (existingEmailIdx) {
+          const hasPfe = Boolean(existingEmailIdx.partialFilterExpression && existingEmailIdx.partialFilterExpression.email);
+          if (!hasPfe || existingEmailIdx.sparse) {
+            console.log('[REPAIR] Obsolete email_1 index found on target users collection. Cleaning blank emails and replacing index...');
+            await col.updateMany({ email: { $in: ['', null] } }, { $unset: { email: '' } });
+            await col.dropIndex('email_1');
+            results.repairedIndexes.push('users.email_1');
+            existingIndexes = await col.indexes();
+          }
+        }
+      }
+
       const match = findMatchingIndex(existingIndexes, required);
       if (match.status === 'MATCH') {
         results.indexesExisting.push(`${colName}.${required.options.name || JSON.stringify(required.keys)}`);
@@ -193,13 +209,38 @@ export async function migrateBusinessRecords(sourceDb, targetDb) {
   // 4. Users Migration (Customer accounts)
   const sourceUsers = await sourceDb.collection('users').find({}).toArray();
   const targetUserCol = targetDb.collection('users');
+
+  // Verify non-empty email duplicates before insertion
+  const emailCounts = new Map();
+  for (const u of sourceUsers) {
+    if (u.email && typeof u.email === 'string' && u.email.trim() !== '') {
+      const normalized = u.email.trim().toLowerCase();
+      emailCounts.set(normalized, (emailCounts.get(normalized) || 0) + 1);
+    }
+  }
+  for (const [emailVal, count] of emailCounts.entries()) {
+    if (count > 1) {
+      throw new Error(`FAIL-CLOSED: Conflicting duplicate non-empty email "${emailVal}" found on ${count} source accounts. Will not overwrite or merge.`);
+    }
+  }
+
   for (const u of sourceUsers) {
     const existing = await targetUserCol.findOne({ _id: u._id });
     if (!existing) {
       const cleanUser = { ...u, isStagingFixture: false };
+      // Treat blank/whitespace emails as absent (do not invent emails)
+      if (typeof cleanUser.email === 'string' && cleanUser.email.trim() === '') {
+        delete cleanUser.email;
+      } else if (typeof cleanUser.email === 'string') {
+        cleanUser.email = cleanUser.email.trim().toLowerCase();
+      }
       await targetUserCol.insertOne(cleanUser);
       migrationResults.users.copied++;
     } else {
+      // Clean up target doc if it was inserted with blank email in a previous partial attempt
+      if (existing.email === '' || existing.email === null) {
+        await targetUserCol.updateOne({ _id: u._id }, { $unset: { email: '' } });
+      }
       migrationResults.users.skipped++;
     }
   }
@@ -401,12 +442,31 @@ export async function verifyTargetIntegrity(sourceDb, targetDb) {
     throw new Error(`FAIL-CLOSED: Expected 21 customer accounts, found ${userCount}.`);
   }
 
+  // Verify no blank emails exist in target
+  const blankEmails = await targetDb.collection('users').countDocuments({ email: '' });
+  if (blankEmails !== 0) {
+    throw new Error(`FAIL-CLOSED: Found ${blankEmails} users with blank email in target database.`);
+  }
+
+  // Verify valid non-empty email
+  const validEmailUser = await targetDb.collection('users').findOne({ email: 'rajesh.kumar@example.com' });
+  if (!validEmailUser) {
+    throw new Error('FAIL-CLOSED: User with valid email "rajesh.kumar@example.com" not found in target database.');
+  }
+
+  // Verify target index specification on users.email_1
+  const userIndexes = await targetDb.collection('users').indexes();
+  const emailIdx = userIndexes.find(i => i.name === 'email_1');
+  if (!emailIdx || !emailIdx.partialFilterExpression || !emailIdx.partialFilterExpression.email) {
+    throw new Error('FAIL-CLOSED: email_1 index on target users is missing required partialFilterExpression.');
+  }
+
   verification.recordsVerified.applications = appCount;
   verification.recordsVerified.jobapplications = { count: jobCount, cvAttachmentsVerified: true };
   verification.recordsVerified.contactinquiries = inqCount;
-  verification.recordsVerified.users = userCount;
+  verification.recordsVerified.users = { count: userCount, blankEmails: 0, partialIndexVerified: true };
 
-  // 5. Verify GridFS Images bit-for-bit with Source DB
+  // 6. Verify GridFS Images bit-for-bit with Source DB
   for (const bucket of ['shop_images', 'product_images']) {
     const tFiles = await targetDb.collection(`${bucket}.files`).find({}).toArray();
     for (const f of tFiles) {
@@ -473,6 +533,9 @@ export async function runProductionMigration(targetUri) {
     const provisionResults = await provisionProductionDatabase(targetDb);
     console.log(`Collections created: ${provisionResults.collectionsCreated.length}, existing: ${provisionResults.collectionsExisting.length}`);
     console.log(`Indexes created: ${provisionResults.indexesCreated.length}, existing: ${provisionResults.indexesExisting.length}`);
+    if (provisionResults.repairedIndexes.length > 0) {
+      console.log(`Indexes repaired: ${provisionResults.repairedIndexes.join(', ')}`);
+    }
 
     // 2. Migrate business records
     console.log('\n--- STEP 2: MIGRATING REAL BUSINESS RECORDS ---');

@@ -33,8 +33,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       lowercase: true,
       trim: true,
-      sparse: true,
-      unique: true
+      set: v => (typeof v === 'string' && v.trim() !== '' ? v.trim().toLowerCase() : undefined)
     },
     passwordHash: {
       type: String,
@@ -101,6 +100,22 @@ const userSchema = new mongoose.Schema(
     toObject: { virtuals: true }
   }
 );
+
+userSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { email: { $type: 'string', $gt: '' } },
+    name: 'email_1'
+  }
+);
+
+userSchema.pre('validate', function (next) {
+  if (typeof this.email === 'string' && this.email.trim() === '') {
+    this.email = undefined;
+  }
+  next();
+});
 
 userSchema.virtual('isActive').get(function () {
   return this.status === 'ACTIVE';

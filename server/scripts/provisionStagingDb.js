@@ -87,7 +87,11 @@ export const REQUIRED_SCHEMA = Object.freeze({
       },
       {
         keys: { email: 1 },
-        options: { unique: true, sparse: true, name: 'email_1' }
+        options: {
+        unique: true,
+        partialFilterExpression: { email: { $type: 'string', $gt: '' } },
+        name: 'email_1'
+      }
       },
       {
         keys: { role: 1 },

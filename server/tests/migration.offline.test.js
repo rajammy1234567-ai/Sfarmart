@@ -22,9 +22,13 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
     for (const col of expected) {
       assert.ok(keys.includes(col), `Must include collection ${col}`);
     }
+
+    const emailIdx = FULL_PRODUCTION_SCHEMA.users.indexes.find(i => i.options.name === 'email_1');
+    assert.ok(emailIdx, 'email_1 index must exist in users schema');
+    assert.deepEqual(emailIdx.options.partialFilterExpression, { email: { $type: 'string', $gt: '' } }, 'email_1 must use partialFilterExpression');
   });
 
-  await t.test('2. migrateBusinessRecords copies Krishna shop, categories, products, applications, and GridFS images while skipping duplicates', async () => {
+  await t.test('2. migrateBusinessRecords treats blank emails as absent, checks duplicate non-empty emails, and migrates safely', async () => {
     const krishnaId = new mongoose.Types.ObjectId('6ae461e7b53a14b178ef76c4');
     const bannerFileId = new mongoose.Types.ObjectId('6ae85203c2ee0531cbabb99b');
     const prodFileId = new mongoose.Types.ObjectId('6ae47c211e70d85570212591');
@@ -33,7 +37,9 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
     const appId = new mongoose.Types.ObjectId();
     const jobId = new mongoose.Types.ObjectId();
     const inqId = new mongoose.Types.ObjectId();
-    const userId = new mongoose.Types.ObjectId();
+    const user1Id = new mongoose.Types.ObjectId();
+    const user2Id = new mongoose.Types.ObjectId();
+    const user3Id = new mongoose.Types.ObjectId();
 
     const mockSourceDb = {
       collection: (name) => {
@@ -76,7 +82,15 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
           };
         }
         if (name === 'users') {
-          return { find: () => ({ toArray: async () => [{ _id: userId, phone: '7009264006' }] }) };
+          return {
+            find: () => ({
+              toArray: async () => [
+                { _id: user1Id, phone: '7009264006', email: '' }, // blank email
+                { _id: user2Id, phone: '7973442177', email: '   ' }, // whitespace email
+                { _id: user3Id, phone: '9876543210', email: 'rajesh.kumar@example.com' } // valid email
+              ]
+            })
+          };
         }
         if (name === 'applications') {
           return { find: () => ({ toArray: async () => [{ _id: appId, fullName: 'Sukhjinder singh' }] }) };
@@ -127,6 +141,13 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
           targetStore[name]?.set(doc._id.toString(), doc);
           return { insertedId: doc._id };
         },
+        updateOne: async (q, update) => {
+          const doc = targetStore[name]?.get(q._id.toString());
+          if (doc && update.$unset && update.$unset.email !== undefined) {
+            delete doc.email;
+          }
+          return { acknowledged: true };
+        },
         replaceOne: async (filter, doc) => {
           targetStore[name]?.set(`${filter.files_id}_${filter.n}`, doc);
           return { acknowledged: true };
@@ -139,26 +160,124 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
     assert.equal(res.categories.copied, 1);
     assert.equal(res.vendors.copied, 1);
     assert.equal(res.products.copied, 1);
-    assert.equal(res.users.copied, 1);
+    assert.equal(res.users.copied, 3);
     assert.equal(res.applications.copied, 1);
     assert.equal(res.jobapplications.copied, 1);
     assert.equal(res.contactinquiries.copied, 1);
     assert.equal(res.gridfsFiles.copied, 2);
     assert.equal(res.gridfsChunks.copied, 2);
 
+    // Verify blank emails were stripped/omitted in target
+    const targetUser1 = targetStore.users.get(user1Id.toString());
+    const targetUser2 = targetStore.users.get(user2Id.toString());
+    const targetUser3 = targetStore.users.get(user3Id.toString());
+    assert.equal(targetUser1.email, undefined, 'Blank email must be omitted');
+    assert.equal(targetUser2.email, undefined, 'Whitespace email must be omitted');
+    assert.equal(targetUser3.email, 'rajesh.kumar@example.com', 'Valid email must be preserved');
+
     // Run 2: safe resumption, zero duplicate writes
     const res2 = await migrateBusinessRecords(mockSourceDb, mockTargetDb);
     assert.equal(res2.categories.skipped, 1);
     assert.equal(res2.vendors.skipped, 1);
     assert.equal(res2.products.skipped, 1);
-    assert.equal(res2.users.skipped, 1);
+    assert.equal(res2.users.skipped, 3);
     assert.equal(res2.applications.skipped, 1);
     assert.equal(res2.jobapplications.skipped, 1);
     assert.equal(res2.contactinquiries.skipped, 1);
     assert.equal(res2.gridfsFiles.skipped, 2);
   });
 
-  await t.test('3. verifyTargetIntegrity asserts vendor, products, relational keys, and image chunks', async () => {
+  await t.test('3. migrateBusinessRecords rejects duplicate non-empty emails fail-closed', async () => {
+    const mockSourceDb = {
+      collection: (name) => {
+        if (name === 'users') {
+          return {
+            find: () => ({
+              toArray: async () => [
+                { _id: new mongoose.Types.ObjectId(), phone: '1111111111', email: 'duplicate@example.com' },
+                { _id: new mongoose.Types.ObjectId(), phone: '2222222222', email: 'DUPLICATE@example.com' }
+              ]
+            })
+          };
+        }
+        return { find: () => ({ toArray: async () => [] }), findOne: async () => null };
+      }
+    };
+    const mockTargetDb = { collection: () => ({ findOne: async () => null }) };
+
+    await assert.rejects(
+      async () => migrateBusinessRecords(mockSourceDb, mockTargetDb),
+      /FAIL-CLOSED: Conflicting duplicate non-empty email/
+    );
+  });
+
+  await t.test('4. provisionProductionDatabase repairs obsolete sparse email_1 index on users', async () => {
+    let droppedIndex = null;
+    let unsetStrings = false;
+    let createdIndex = null;
+
+    const mockDb = {
+      listCollections: () => ({
+        toArray: async () => Object.keys(FULL_PRODUCTION_SCHEMA).map(name => ({ name }))
+      }),
+      collection: (name) => {
+        if (name === 'users') {
+          let userIndexes = [
+            { name: '_id_', key: { _id: 1 } },
+            { name: 'phone_1', key: { phone: 1 }, unique: true },
+            // Obsolete sparse index without partialFilterExpression
+            { name: 'email_1', key: { email: 1 }, unique: true, sparse: true },
+            { name: 'role_1', key: { role: 1 } },
+            { name: 'status_1', key: { status: 1 } }
+          ];
+          return {
+            indexes: async () => userIndexes,
+            updateMany: async (filter, update) => {
+              if (update.$unset && update.$unset.email !== undefined) {
+                unsetStrings = true;
+              }
+              return { acknowledged: true };
+            },
+            dropIndex: async (idxName) => {
+              droppedIndex = idxName;
+              userIndexes = userIndexes.filter(i => i.name !== idxName);
+            },
+            createIndex: async (keys, options) => {
+              createdIndex = { keys, options };
+              userIndexes.push({ name: options.name, key: keys, ...options });
+            }
+          };
+        }
+        return {
+          indexes: async () => {
+            const req = FULL_PRODUCTION_SCHEMA[name]?.indexes || [];
+            return req.map(r => {
+              if (r.keys.name === 'text') {
+                return {
+                  name: r.options.name,
+                  key: { _fts: 'text', _ftsx: 1 },
+                  weights: { name: 1, tags: 1 },
+                  default_language: 'english',
+                  language_override: 'language'
+                };
+              }
+              return { name: r.options.name, key: r.keys, ...r.options };
+            });
+          },
+          createIndex: async () => {}
+        };
+      }
+    };
+
+    const res = await provisionProductionDatabase(mockDb);
+    assert.equal(droppedIndex, 'email_1', 'Must drop obsolete email_1 index');
+    assert.equal(unsetStrings, true, 'Must unset empty string emails');
+    assert.ok(createdIndex, 'Must create repaired email_1 index');
+    assert.deepEqual(createdIndex.options.partialFilterExpression, { email: { $type: 'string', $gt: '' } });
+    assert.ok(res.repairedIndexes.includes('users.email_1'));
+  });
+
+  await t.test('5. verifyTargetIntegrity asserts vendor, products, relational keys, image chunks, and partial index', async () => {
     const krishnaId = new mongoose.Types.ObjectId('6ae461e7b53a14b178ef76c4');
     const catId = new mongoose.Types.ObjectId('6aaa44d4bba7479a91ad1756');
     const bannerFileId = new mongoose.Types.ObjectId('6ae85203c2ee0531cbabb99b');
@@ -202,7 +321,19 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
           return { countDocuments: async () => 14 };
         }
         if (name === 'users') {
-          return { countDocuments: async () => 21 };
+          return {
+            countDocuments: async (filter) => {
+              if (filter && filter.email === '') return 0;
+              return 21;
+            },
+            findOne: async (q) => {
+              if (q && q.email === 'rajesh.kumar@example.com') return { email: 'rajesh.kumar@example.com' };
+              return null;
+            },
+            indexes: async () => [
+              { name: 'email_1', key: { email: 1 }, unique: true, partialFilterExpression: { email: { $type: 'string', $gt: '' } } }
+            ]
+          };
         }
         if (name === 'shop_images.files') {
           return { find: () => ({ toArray: async () => [{ _id: bannerFileId, length: 3 }] }) };
@@ -225,5 +356,7 @@ test('Production Migration Schema & Integrity Suite', async (t) => {
     assert.equal(integrity.relationalChecks.length, 2);
     assert.equal(integrity.imageIntegrity.length, 1);
     assert.ok(integrity.imageIntegrity[0].valid);
+    assert.equal(integrity.recordsVerified.users.blankEmails, 0);
+    assert.equal(integrity.recordsVerified.users.partialIndexVerified, true);
   });
 });
