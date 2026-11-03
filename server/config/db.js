@@ -8,6 +8,7 @@ dotenv.config({ path: path.resolve(process.cwd(), 'server', '.env') });
 
 export const APPROVED_STAGING_HOST = 'farmart-staging.gxn3bfw.mongodb.net';
 export const APPROVED_DATABASE = 'farmart_test_disposable';
+export const APPROVED_PRODUCTION_DATABASE = 'farmart_production';
 
 export function validateStagingUri(rawUri) {
   if (!rawUri || typeof rawUri !== 'string') {
@@ -49,21 +50,34 @@ export function validateProductionUri(rawUri) {
     throw new Error('FAIL-CLOSED: Production MONGODB_URI cannot be parsed as a valid URL.');
   }
 
-  if (parsed.hostname.toLowerCase() === APPROVED_STAGING_HOST.toLowerCase()) {
-    throw new Error('FAIL-CLOSED: Production MONGODB_URI must not connect to the staging cluster (farmart-staging.gxn3bfw.mongodb.net).');
-  }
-
-  const targetDb = parsed.pathname.replace(/^\//, '').split('?')[0];
-  if (targetDb === APPROVED_DATABASE) {
-    throw new Error('FAIL-CLOSED: Production MONGODB_URI must not target the staging database (farmart_test_disposable).');
+  if (parsed.protocol !== 'mongodb+srv:' && parsed.protocol !== 'mongodb:') {
+    throw new Error(`FAIL-CLOSED: Production mode requires protocol "mongodb+srv:" or "mongodb:", received "${parsed.protocol}".`);
   }
 
   if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
     throw new Error('FAIL-CLOSED: Production mode cannot target a local host database.');
   }
 
+  const targetDb = parsed.pathname.replace(/^\//, '').split('?')[0].trim();
+  if (!targetDb) {
+    throw new Error(`FAIL-CLOSED: Production mode requires an explicit database name in MONGODB_URI. Expected "${APPROVED_PRODUCTION_DATABASE}".`);
+  }
+
+  if (targetDb === 'test') {
+    throw new Error(`FAIL-CLOSED: Production mode strictly rejects default database "test". Expected "${APPROVED_PRODUCTION_DATABASE}".`);
+  }
+
+  if (targetDb === APPROVED_DATABASE) {
+    throw new Error(`FAIL-CLOSED: Production mode strictly rejects staging database "${APPROVED_DATABASE}". Expected "${APPROVED_PRODUCTION_DATABASE}".`);
+  }
+
+  if (targetDb !== APPROVED_PRODUCTION_DATABASE) {
+    throw new Error(`FAIL-CLOSED: Production database mismatch. Expected "${APPROVED_PRODUCTION_DATABASE}", received "${targetDb}".`);
+  }
+
   return rawUri;
 }
+
 
 export function sanitizeErrorMessage(msg) {
   if (!msg || typeof msg !== 'string') return '';

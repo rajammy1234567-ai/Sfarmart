@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { isAllowedClientOrigin } from '../utils/corsPolicy.js';
-import { validateProductionUri } from '../config/db.js';
+import { validateProductionUri, validateStagingUri, APPROVED_STAGING_HOST, APPROVED_DATABASE, APPROVED_PRODUCTION_DATABASE } from '../config/db.js';
 import { errorHandler } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -112,26 +112,69 @@ describe('Production Database Isolation Guard Verification', () => {
   test('strictly rejects missing or empty MONGODB_URI in production', () => {
     assert.throws(() => validateProductionUri(''), /FAIL-CLOSED: Production mode requires a valid MONGODB_URI/);
     assert.throws(() => validateProductionUri(null), /FAIL-CLOSED: Production mode requires a valid MONGODB_URI/);
+    assert.throws(() => validateProductionUri('   '), /FAIL-CLOSED: Production mode requires a valid MONGODB_URI/);
   });
 
-  test('strictly rejects connections to staging cluster or disposable database', () => {
+  test('strictly rejects missing database names in production', () => {
     assert.throws(
-      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/production_db?retryWrites=true'),
-      /FAIL-CLOSED: Production MONGODB_URI must not connect to the staging cluster/
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net'),
+      /FAIL-CLOSED: Production mode requires an explicit database name/
     );
     assert.throws(
-      () => validateProductionUri('mongodb+srv://user:pass@production-cluster.mongodb.net/farmart_test_disposable?retryWrites=true'),
-      /FAIL-CLOSED: Production MONGODB_URI must not target the staging database/
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/'),
+      /FAIL-CLOSED: Production mode requires an explicit database name/
+    );
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/?retryWrites=true'),
+      /FAIL-CLOSED: Production mode requires an explicit database name/
+    );
+  });
+
+  test('strictly rejects default database "test" and staging database "farmart_test_disposable"', () => {
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/test?retryWrites=true'),
+      /FAIL-CLOSED: Production mode strictly rejects default database "test"/
+    );
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/farmart_test_disposable?retryWrites=true'),
+      /FAIL-CLOSED: Production mode strictly rejects staging database "farmart_test_disposable"/
+    );
+  });
+
+  test('strictly rejects arbitrary/unapproved database names in production', () => {
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/dev_db?retryWrites=true'),
+      /FAIL-CLOSED: Production database mismatch. Expected "farmart_production", received "dev_db"/
     );
   });
 
   test('strictly rejects localhost or invalid URLs in production', () => {
-    assert.throws(() => validateProductionUri('mongodb://localhost:27017/prod'), /FAIL-CLOSED: Production mode cannot target a local host database/);
+    assert.throws(() => validateProductionUri('mongodb://localhost:27017/farmart_production'), /FAIL-CLOSED: Production mode cannot target a local host database/);
+    assert.throws(() => validateProductionUri('mongodb://127.0.0.1:27017/farmart_production'), /FAIL-CLOSED: Production mode cannot target a local host database/);
     assert.throws(() => validateProductionUri('not-a-valid-url'), /FAIL-CLOSED: Production MONGODB_URI cannot be parsed as a valid URL/);
   });
 
-  test('accepts valid dedicated production database URL', () => {
-    const validProd = 'mongodb+srv://prod_user:SecureProdPass123@farmart-production.cluster.mongodb.net/farmart_production?retryWrites=true&w=majority';
-    assert.equal(validateProductionUri(validProd), validProd);
+  test('allows the existing Atlas cluster host ONLY when the explicitly selected database is farmart_production', () => {
+    const existingClusterProdUri = 'mongodb+srv://prod_user:SecurePass123@farmart-staging.gxn3bfw.mongodb.net/farmart_production?retryWrites=true&w=majority';
+    assert.equal(validateProductionUri(existingClusterProdUri), existingClusterProdUri);
+  });
+
+  test('allows dedicated production Atlas host with farmart_production', () => {
+    const dedicatedProdUri = 'mongodb+srv://prod_user:SecurePass123@farmart-production.cluster.mongodb.net/farmart_production?retryWrites=true&w=majority';
+    assert.equal(validateProductionUri(dedicatedProdUri), dedicatedProdUri);
+  });
+
+  test('preserves staging behavior: validateStagingUri requires existing staging host and farmart_test_disposable', () => {
+    const stagingUri = 'mongodb+srv://staging_user:pass@farmart-staging.gxn3bfw.mongodb.net/farmart_test_disposable?retryWrites=true';
+    assert.equal(validateStagingUri(stagingUri), stagingUri);
+
+    assert.throws(
+      () => validateStagingUri('mongodb+srv://staging_user:pass@farmart-staging.gxn3bfw.mongodb.net/farmart_production?retryWrites=true'),
+      /FAIL-CLOSED: Staging database mismatch/
+    );
+    assert.throws(
+      () => validateStagingUri('mongodb+srv://staging_user:pass@other-host.mongodb.net/farmart_test_disposable?retryWrites=true'),
+      /FAIL-CLOSED: Staging host mismatch/
+    );
   });
 });
