@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
-      web: { outline: 'none' }
+      web: { outlineStyle: 'none' }
     })
   },
   addButtonText: {
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 28,
     ...Platform.select({
-      web: { outline: 'none' }
+      web: { outlineStyle: 'none' }
     })
   },
   qtyText: {

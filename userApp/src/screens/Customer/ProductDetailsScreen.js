@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     ...Platform.select({
-      web: { outline: 'none' }
+      web: { outlineStyle: 'none' }
     })
   },
   addBtnText: {
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...Platform.select({
-      web: { outline: 'none' }
+      web: { outlineStyle: 'none' }
     })
   },
   qtyText: {

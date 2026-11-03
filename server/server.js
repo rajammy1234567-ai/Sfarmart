@@ -101,7 +101,13 @@ app.use(
       }
 
       // Explicitly configured client origins (production and custom staging domains)
-      if (clientOrigins.includes(origin)) {
+      const allowedOrigins = [
+        'https://farm-mart-admin.onrender.com',
+        'https://farmart-admin.onrender.com',
+        'https://farm-mart.onrender.com',
+        ...clientOrigins
+      ];
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 

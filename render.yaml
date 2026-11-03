@@ -8,3 +8,16 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+  - type: web
+    name: farm-mart-admin
+    env: static
+    rootDir: admin
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://farmart-backend-staging.onrender.com/api
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
