@@ -275,7 +275,11 @@ async function startServer() {
   if (!isStaging || hasInitCredentials) await seedAdmin();
   httpServer.listen(PORT, () => {
     console.log(`Farmart backend listening on port ${PORT}`);
-    startPushReceiptWorker({ intervalMs: Number(process.env.RECEIPT_WORKER_INTERVAL_MS) || 2000 });
+    if (process.env.DISABLE_EXTERNAL_NOTIFICATIONS === 'true') {
+      console.log('[PushReceiptWorker] External notifications disabled (DISABLE_EXTERNAL_NOTIFICATIONS=true). Worker suppressed.');
+    } else {
+      startPushReceiptWorker({ intervalMs: Number(process.env.RECEIPT_WORKER_INTERVAL_MS) || 2000 });
+    }
     recoverPendingDispatches().catch(err => console.error('[RiderAssignment] Startup recovery failed:', err));
   });
 }

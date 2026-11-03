@@ -572,6 +572,10 @@ export async function processDuePushReceipts() {
  */
 export function startPushReceiptWorker({ intervalMs = 2000 } = {}) {
   if (pushReceiptWorkerTimer) return;
+  if (process.env.DISABLE_EXTERNAL_NOTIFICATIONS === 'true' && process.env.USE_RECEIPT_STUB !== 'true' && process.env.NODE_ENV !== 'test') {
+    console.log('[PushReceiptWorker] External notifications disabled. Worker suppressed.');
+    return;
+  }
 
   // Run once immediately on startup
   processDuePushReceipts().catch((err) => {

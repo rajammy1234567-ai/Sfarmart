@@ -2,6 +2,10 @@ import nodemailer from 'nodemailer';
 
 const sendAdminEmail = async (subject, text, userEmail = null) => {
   try {
+    if (process.env.DISABLE_EXTERNAL_NOTIFICATIONS === 'true') {
+      console.log('📧 External emails disabled (DISABLE_EXTERNAL_NOTIFICATIONS=true). Dispatch skipped.');
+      return;
+    }
     const emailUser = process.env.EMAIL_USER;
     const rawPass = process.env.EMAIL_PASS;
 
