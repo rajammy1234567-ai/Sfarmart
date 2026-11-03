@@ -5,9 +5,6 @@ const getAdminApiBaseUrl = () => {
   if (envApiUrl) {
     return envApiUrl.replace(/\/+$/, '');
   }
-  if (typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return `http://${window.location.hostname}:5000/api`;
-  }
   return 'https://farmart-backend-staging.onrender.com/api';
 };
 
