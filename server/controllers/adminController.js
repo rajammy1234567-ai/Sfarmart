@@ -58,15 +58,35 @@ export const seedAdmin = async () => {
 export const adminLogin = async (req, res) => {
   const { username, password } = req.body;
   const cleanUsername = typeof username === 'string' ? username.trim() : '';
-  if (!cleanUsername || !password) {
+  if (!cleanUsername || typeof password !== 'string' || !password) {
     return res.status(400).json({ success: false, message: 'Username and password required' });
   }
 
+  // Input validation guards: bound identifier and password lengths to prevent ReDoS / payload abuse
+  if (cleanUsername.length > 80 || password.length > 256) {
+    return res.status(400).json({ success: false, message: 'Invalid credentials format' });
+  }
+
   try {
-    const escaped = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const adminUser = await Admin.findOne({
-      username: { $regex: new RegExp(`^${escaped}$`, 'i') }
-    });
+    // 1. Prefer exact match first (case-sensitive)
+    let adminUser = await Admin.findOne({ username: cleanUsername });
+
+    // 2. If not found, attempt safe case-insensitive lookup
+    if (!adminUser) {
+      const escaped = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const candidates = await Admin.find({
+        username: { $regex: new RegExp(`^${escaped}$`, 'i') }
+      }).limit(2);
+
+      if (candidates.length === 1) {
+        adminUser = candidates[0];
+      } else if (candidates.length > 1) {
+        // Case collision guard: multiple accounts differ only by case.
+        // Refuse to authenticate against an ambiguous account.
+        return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
+      }
+    }
+
     if (!adminUser) {
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -412,34 +432,5 @@ export const updateApplicationStatus = async (req, res) => {
     res.json({ success: true, message: `Status updated to ${status}` });
   } else {
     res.status(404).json({ success: false, message: 'Record not found' });
-  }
-};
-
-export const getStagingAdminInspect = async (_req, res) => {
-  const isStaging = process.env.STAGING_MODE === 'true' || process.env.NODE_ENV === 'staging';
-  if (!isStaging) {
-    return res.status(403).json({ ok: false, message: 'Forbidden outside staging mode' });
-  }
-
-  try {
-    const count = await Admin.countDocuments();
-    const accounts = await Admin.find({}, { password: 0, __v: 0 }).lean();
-    return res.json({
-      ok: true,
-      database: 'farmart_test_disposable',
-      adminAccountCount: count,
-      hasSuperadmin: accounts.some((a) => String(a.username || '').toLowerCase() === 'superadmin'),
-      accounts: accounts.map((a) => ({
-        id: a.id || a._id?.toString(),
-        username: a.username,
-        role: a.role || 'subadmin',
-        name: a.name || 'N/A',
-        access: Array.isArray(a.access) ? a.access : [],
-        isActive: a.isActive !== false
-      })),
-      seedAdminStartupStatus: getStartupSeedStatus()
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, message: err.message });
   }
 };

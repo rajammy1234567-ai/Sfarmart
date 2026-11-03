@@ -87,3 +87,4 @@ finally {
         [Environment]::SetEnvironmentVariable($k, $v, 'Process')
     }
 }
+

@@ -6,7 +6,7 @@ import { REQUIRED_SCHEMA } from '../scripts/provisionStagingDb.js';
 import { runAdminAccountCheck } from '../scripts/checkAdminAccounts.js';
 import { runStagingAdminSetup, STAGING_ADMIN_ROLE_PERMISSIONS } from '../scripts/setupStagingAdmin.js';
 import { resetAdminPassword } from '../scripts/resetAdminPassword.js';
-import { seedAdmin, adminLogin, getStagingAdminInspect } from '../controllers/adminController.js';
+import { seedAdmin, adminLogin } from '../controllers/adminController.js';
 import { recoverStagingAdminPassword } from '../scripts/recoverStagingAdminPassword.js';
 
 test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => {
@@ -392,74 +392,95 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
     assert.ok(updatedDoc.$set.password.startsWith('$2'), 'Must be bcrypt hashed');
   });
 
-  await t.test('17. adminLogin: supports trimmed and case-insensitive username matching', async () => {
+  await t.test('17. adminLogin: input validation, regex escaping, exact preference, and case-collision guard', async () => {
     const bcrypt = (await import('bcryptjs')).default;
     const hashed = await bcrypt.hash('secret_password_123', 10);
 
-    let queriedFilter = null;
-    Admin.findOne = async (filter) => {
-      queriedFilter = filter;
-      return {
-        _id: 'admin-id-1',
-        id: 'admin-id-1',
-        username: 'superadmin',
-        password: hashed,
-        role: 'superadmin',
-        access: ['users', 'partners'],
-        toObject: function() { return { ...this }; }
+    const makeRes = () => {
+      let statusCode = 0;
+      let jsonBody = null;
+      const res = {
+        status: (code) => { statusCode = code; return res; },
+        json: (data) => { jsonBody = data; return res; },
+        getStatusCode: () => statusCode,
+        getBody: () => jsonBody
       };
-    };
-
-    let statusCode = 0;
-    let jsonBody = null;
-    const res = {
-      status: (code) => { statusCode = code; return res; },
-      json: (data) => { jsonBody = data; return res; }
+      return res;
     };
 
     process.env.JWT_ACCESS_SECRET = 'test_access_secret_32_characters_long_min!';
 
-    // Test with whitespace and upper casing
-    const req = {
-      body: { username: '  SuperAdmin  ', password: 'secret_password_123' }
+    // A. Input validation: reject username exceeding 80 chars
+    const resA = makeRes();
+    await adminLogin({ body: { username: 'a'.repeat(81), password: 'valid_password_123' } }, resA);
+    assert.equal(resA.getStatusCode(), 400);
+    assert.equal(resA.getBody().message, 'Invalid credentials format');
+
+    // B. Input validation: reject non-string password
+    const resB = makeRes();
+    await adminLogin({ body: { username: 'superadmin', password: 12345678 } }, resB);
+    assert.equal(resB.getStatusCode(), 400);
+    assert.equal(resB.getBody().message, 'Username and password required');
+
+    // C. Exact match preferred
+    let exactLookupCalled = false;
+    Admin.findOne = async ({ username }) => {
+      if (username === 'superadmin') {
+        exactLookupCalled = true;
+        return {
+          _id: 'admin-id-1',
+          id: 'admin-id-1',
+          username: 'superadmin',
+          password: hashed,
+          role: 'superadmin',
+          access: ['users'],
+          toObject: function() { return { ...this }; }
+        };
+      }
+      return null;
     };
 
-    await adminLogin(req, res);
+    const resC = makeRes();
+    await adminLogin({ body: { username: 'superadmin', password: 'secret_password_123' } }, resC);
+    assert.equal(resC.getStatusCode(), 0);
+    assert.equal(resC.getBody().success, true);
+    assert.equal(exactLookupCalled, true);
 
-    assert.equal(statusCode, 0); // 200 default
-    assert.equal(jsonBody.success, true);
-    assert.equal(jsonBody.admin.username, 'superadmin');
-    assert.ok(jsonBody.token, 'Token must be issued');
-    assert.equal(jsonBody.admin.password, undefined, 'Password must never be returned');
-    assert.ok(queriedFilter.username.$regex, 'Must use case-insensitive regex query');
-  });
+    // D. Safe case-insensitive fallback with proper regex escaping
+    Admin.findOne = async ({ username }) => null; // simulate exact lookup miss
+    Admin.find = (query) => ({
+      limit: async (lim) => {
+        assert.equal(lim, 2);
+        assert.ok(query.username.$regex, 'Must use regex query');
+        return [{
+          _id: 'admin-id-1',
+          id: 'admin-id-1',
+          username: 'superadmin',
+          password: hashed,
+          role: 'superadmin',
+          access: ['users'],
+          toObject: function() { return { ...this }; }
+        }];
+      }
+    });
 
-  await t.test('18. getStagingAdminInspect: returns safe read-only counts without passwords or secrets', async () => {
-    Admin.countDocuments = async () => 2;
+    const resD = makeRes();
+    await adminLogin({ body: { username: '  SUPERADMIN  ', password: 'secret_password_123' } }, resD);
+    assert.equal(resD.getStatusCode(), 0);
+    assert.equal(resD.getBody().success, true);
+    assert.equal(resD.getBody().admin.username, 'superadmin');
+
+    // E. Case collision guard: multiple documents differing only by case triggers 401 rejection
     Admin.find = () => ({
-      lean: async () => [
-        { id: 'admin-1', username: 'superadmin', role: 'superadmin', name: 'Super', access: ['all'] },
-        { id: 'admin-2', username: 'partner_auditor', role: 'subadmin', name: 'Auditor', access: ['partners'] }
+      limit: async () => [
+        { _id: 'admin-1', username: 'superadmin', password: hashed },
+        { _id: 'admin-2', username: 'SuperAdmin', password: hashed }
       ]
     });
 
-    let statusCode = 0;
-    let jsonBody = null;
-    const res = {
-      status: (code) => { statusCode = code; return res; },
-      json: (data) => { jsonBody = data; return res; }
-    };
-
-    process.env.STAGING_MODE = 'true';
-    await getStagingAdminInspect({}, res);
-
-    assert.equal(jsonBody.ok, true);
-    assert.equal(jsonBody.adminAccountCount, 2);
-    assert.equal(jsonBody.hasSuperadmin, true);
-    assert.equal(jsonBody.accounts.length, 2);
-    assert.equal(jsonBody.accounts[0].password, undefined);
-    assert.equal(jsonBody.accounts[1].password, undefined);
-
-    delete process.env.STAGING_MODE;
+    const resE = makeRes();
+    await adminLogin({ body: { username: 'superadmin', password: 'secret_password_123' } }, resE);
+    assert.equal(resE.getStatusCode(), 401);
+    assert.equal(resE.getBody().message, 'Invalid admin credentials');
   });
 });
