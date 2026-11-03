@@ -16,6 +16,10 @@ import jwt from 'jsonwebtoken';
 
 const getJwtAccessSecret = () => process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
+let startupSeedStatus = { checked: false, timestamp: null };
+
+export const getStartupSeedStatus = () => startupSeedStatus;
+
 export const seedAdmin = async () => {
   try {
     const count = await Admin.countDocuments();
@@ -34,27 +38,35 @@ export const seedAdmin = async () => {
           access: ['users', 'partners', 'riders', 'jobs', 'categories']
         });
         console.log('👑 Initial Administrator provisioned from environment variables.');
-        return { created: true, username: admin.username, role: admin.role, id: admin.id };
+        startupSeedStatus = { checked: true, created: true, username: admin.username, role: admin.role, id: admin.id, timestamp: new Date().toISOString() };
+        return startupSeedStatus;
       } else {
         console.log('ℹ️ No admin accounts exist. Set ADMIN_INIT_USERNAME and ADMIN_INIT_PASSWORD in environment to bootstrap.');
-        return { created: false, reason: 'MISSING_INIT_CREDENTIALS' };
+        startupSeedStatus = { checked: true, created: false, reason: 'MISSING_INIT_CREDENTIALS', timestamp: new Date().toISOString() };
+        return startupSeedStatus;
       }
     }
-    return { created: false, reason: 'EXISTING_ACCOUNTS_PRESERVED', count };
+    startupSeedStatus = { checked: true, created: false, reason: 'EXISTING_ACCOUNTS_PRESERVED', count, timestamp: new Date().toISOString() };
+    return startupSeedStatus;
   } catch (err) {
     console.warn('Admin bootstrap check error:', err.message);
-    return { created: false, error: err.message };
+    startupSeedStatus = { checked: true, created: false, error: err.message, timestamp: new Date().toISOString() };
+    return startupSeedStatus;
   }
 };
 
 export const adminLogin = async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) {
+  const cleanUsername = typeof username === 'string' ? username.trim() : '';
+  if (!cleanUsername || !password) {
     return res.status(400).json({ success: false, message: 'Username and password required' });
   }
 
   try {
-    const adminUser = await Admin.findOne({ username });
+    const escaped = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const adminUser = await Admin.findOne({
+      username: { $regex: new RegExp(`^${escaped}$`, 'i') }
+    });
     if (!adminUser) {
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -400,5 +412,34 @@ export const updateApplicationStatus = async (req, res) => {
     res.json({ success: true, message: `Status updated to ${status}` });
   } else {
     res.status(404).json({ success: false, message: 'Record not found' });
+  }
+};
+
+export const getStagingAdminInspect = async (_req, res) => {
+  const isStaging = process.env.STAGING_MODE === 'true' || process.env.NODE_ENV === 'staging';
+  if (!isStaging) {
+    return res.status(403).json({ ok: false, message: 'Forbidden outside staging mode' });
+  }
+
+  try {
+    const count = await Admin.countDocuments();
+    const accounts = await Admin.find({}, { password: 0, __v: 0 }).lean();
+    return res.json({
+      ok: true,
+      database: 'farmart_test_disposable',
+      adminAccountCount: count,
+      hasSuperadmin: accounts.some((a) => String(a.username || '').toLowerCase() === 'superadmin'),
+      accounts: accounts.map((a) => ({
+        id: a.id || a._id?.toString(),
+        username: a.username,
+        role: a.role || 'subadmin',
+        name: a.name || 'N/A',
+        access: Array.isArray(a.access) ? a.access : [],
+        isActive: a.isActive !== false
+      })),
+      seedAdminStartupStatus: getStartupSeedStatus()
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message });
   }
 };

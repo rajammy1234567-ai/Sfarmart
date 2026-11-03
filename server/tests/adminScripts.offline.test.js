@@ -6,7 +6,8 @@ import { REQUIRED_SCHEMA } from '../scripts/provisionStagingDb.js';
 import { runAdminAccountCheck } from '../scripts/checkAdminAccounts.js';
 import { runStagingAdminSetup, STAGING_ADMIN_ROLE_PERMISSIONS } from '../scripts/setupStagingAdmin.js';
 import { resetAdminPassword } from '../scripts/resetAdminPassword.js';
-import { seedAdmin } from '../controllers/adminController.js';
+import { seedAdmin, adminLogin, getStagingAdminInspect } from '../controllers/adminController.js';
+import { recoverStagingAdminPassword } from '../scripts/recoverStagingAdminPassword.js';
 
 test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => {
   const origConnect = mongoose.connect;
@@ -15,6 +16,7 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
   const origAdminFind = Admin.find;
   const origAdminFindOne = Admin.findOne;
   const origAdminCreate = Admin.create;
+  const origAdminUpdateOne = Admin.updateOne;
 
   t.afterEach(() => {
     mongoose.connect = origConnect;
@@ -23,8 +25,12 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
     Admin.find = origAdminFind;
     Admin.findOne = origAdminFindOne;
     Admin.create = origAdminCreate;
+    Admin.updateOne = origAdminUpdateOne;
     delete process.env.STAGING_ADMIN_USERNAME;
     delete process.env.STAGING_ADMIN_PASSWORD;
+    delete process.env.STAGING_ADMIN_TARGET_USERNAME;
+    delete process.env.STAGING_ADMIN_NEW_PASSWORD;
+    delete process.env.STAGING_MONGO_URI;
     delete process.env.ADMIN_INIT_USERNAME;
     delete process.env.ADMIN_INIT_PASSWORD;
     delete process.env.ADMIN_INIT_NAME;
@@ -338,5 +344,122 @@ test('Staging Admin Scripts Suite (Offline & Guard Verification)', async (t) => 
     const isStagingFalse = false;
     const shouldRunCaseC = !isStagingFalse || hasInitCredsEmpty;
     assert.equal(shouldRunCaseC, true, 'Must allow seedAdmin in development / production mode');
+  });
+
+  await t.test('16. recoverStagingAdminPassword: pins host and updates target admin password', async () => {
+    // Rejects non-staging host
+    await assert.rejects(
+      async () => recoverStagingAdminPassword({ uri: 'mongodb+srv://user:pass@evil-host.mongodb.net/farmart_test_disposable', username: 'superadmin', newPassword: 'new_valid_password_123' }),
+      /does not match approved staging host/
+    );
+
+    // Rejects short password
+    await assert.rejects(
+      async () => recoverStagingAdminPassword({ uri: 'mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/farmart_test_disposable', username: 'superadmin', newPassword: 'short' }),
+      /New password must be provided with at least 8 characters/
+    );
+
+    let updatedFilter = null;
+    let updatedDoc = null;
+
+    mongoose.connect = async () => mongoose;
+    mongoose.disconnect = async () => {};
+
+    Admin.findOne = async () => ({
+      _id: 'staging-admin-doc-id',
+      username: 'superadmin',
+      role: 'superadmin',
+      access: ['users', 'partners', 'riders', 'jobs', 'categories']
+    });
+
+    Admin.updateOne = async (filter, update) => {
+      updatedFilter = filter;
+      updatedDoc = update;
+      return { matchedCount: 1, modifiedCount: 1 };
+    };
+
+    const validStagingUri = 'mongodb+srv://farmart_staging_tester:pass@farmart-staging.gxn3bfw.mongodb.net/farmart_test_disposable';
+    const res = await recoverStagingAdminPassword({
+      uri: validStagingUri,
+      username: 'superadmin',
+      newPassword: 'my_fresh_staging_password_456'
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(res.username, 'superadmin');
+    assert.equal(res.role, 'superadmin');
+    assert.deepEqual(updatedFilter, { _id: 'staging-admin-doc-id' });
+    assert.ok(updatedDoc.$set.password.startsWith('$2'), 'Must be bcrypt hashed');
+  });
+
+  await t.test('17. adminLogin: supports trimmed and case-insensitive username matching', async () => {
+    const bcrypt = (await import('bcryptjs')).default;
+    const hashed = await bcrypt.hash('secret_password_123', 10);
+
+    let queriedFilter = null;
+    Admin.findOne = async (filter) => {
+      queriedFilter = filter;
+      return {
+        _id: 'admin-id-1',
+        id: 'admin-id-1',
+        username: 'superadmin',
+        password: hashed,
+        role: 'superadmin',
+        access: ['users', 'partners'],
+        toObject: function() { return { ...this }; }
+      };
+    };
+
+    let statusCode = 0;
+    let jsonBody = null;
+    const res = {
+      status: (code) => { statusCode = code; return res; },
+      json: (data) => { jsonBody = data; return res; }
+    };
+
+    process.env.JWT_ACCESS_SECRET = 'test_access_secret_32_characters_long_min!';
+
+    // Test with whitespace and upper casing
+    const req = {
+      body: { username: '  SuperAdmin  ', password: 'secret_password_123' }
+    };
+
+    await adminLogin(req, res);
+
+    assert.equal(statusCode, 0); // 200 default
+    assert.equal(jsonBody.success, true);
+    assert.equal(jsonBody.admin.username, 'superadmin');
+    assert.ok(jsonBody.token, 'Token must be issued');
+    assert.equal(jsonBody.admin.password, undefined, 'Password must never be returned');
+    assert.ok(queriedFilter.username.$regex, 'Must use case-insensitive regex query');
+  });
+
+  await t.test('18. getStagingAdminInspect: returns safe read-only counts without passwords or secrets', async () => {
+    Admin.countDocuments = async () => 2;
+    Admin.find = () => ({
+      lean: async () => [
+        { id: 'admin-1', username: 'superadmin', role: 'superadmin', name: 'Super', access: ['all'] },
+        { id: 'admin-2', username: 'partner_auditor', role: 'subadmin', name: 'Auditor', access: ['partners'] }
+      ]
+    });
+
+    let statusCode = 0;
+    let jsonBody = null;
+    const res = {
+      status: (code) => { statusCode = code; return res; },
+      json: (data) => { jsonBody = data; return res; }
+    };
+
+    process.env.STAGING_MODE = 'true';
+    await getStagingAdminInspect({}, res);
+
+    assert.equal(jsonBody.ok, true);
+    assert.equal(jsonBody.adminAccountCount, 2);
+    assert.equal(jsonBody.hasSuperadmin, true);
+    assert.equal(jsonBody.accounts.length, 2);
+    assert.equal(jsonBody.accounts[0].password, undefined);
+    assert.equal(jsonBody.accounts[1].password, undefined);
+
+    delete process.env.STAGING_MODE;
   });
 });

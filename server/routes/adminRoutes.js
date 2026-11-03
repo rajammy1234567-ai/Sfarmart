@@ -1,5 +1,5 @@
 import express from 'express';
-import { adminLogin, createSubAdmin, getAdminData, updateApplicationStatus } from '../controllers/adminController.js';
+import { adminLogin, createSubAdmin, getAdminData, updateApplicationStatus, getStagingAdminInspect } from '../controllers/adminController.js';
 import {
   getCategoryRequestsAdmin,
   approveCategoryRequestAdmin,
@@ -14,6 +14,9 @@ const router = express.Router();
 
 // Public admin login
 router.post('/login', adminLogin);
+
+// Staging-only read-only account inspection (zero passwords or hashes exposed)
+router.get('/staging-inspect', getStagingAdminInspect);
 
 // Protected admin management endpoints
 // Superadmin only: creating subadmins or changing permissions
