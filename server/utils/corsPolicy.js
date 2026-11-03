@@ -24,11 +24,21 @@ export const isAllowedClientOrigin = (origin) => {
 
   // Deployed Admin, Customer, and Partner web hostnames on Render + dynamic CLIENT_ORIGINS
   const allowed = [
+    'https://sfarmart-admin-staging.onrender.com',
     'https://farm-mart-admin.onrender.com',
     'https://farmart-admin.onrender.com',
     'https://farm-mart.onrender.com',
     ...getClientOrigins()
   ];
 
-  return allowed.includes(origin);
+  if (allowed.includes(origin)) {
+    return true;
+  }
+
+  // Allow official S-farmart / Farmart frontend services on onrender.com
+  if (/^https:\/\/(sfarmart|farm-?mart|farmart)(-[a-z0-9]+)*\.onrender\.com$/.test(origin)) {
+    return true;
+  }
+
+  return false;
 };

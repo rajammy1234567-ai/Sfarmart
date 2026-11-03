@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth.js';
 
 describe('Admin CORS Policy Verification', () => {
   test('allows deployed and staging admin origins', () => {
+    assert.equal(isAllowedClientOrigin('https://sfarmart-admin-staging.onrender.com'), true);
     assert.equal(isAllowedClientOrigin('https://farm-mart-admin.onrender.com'), true);
     assert.equal(isAllowedClientOrigin('https://farmart-admin.onrender.com'), true);
     assert.equal(isAllowedClientOrigin('https://farm-mart.onrender.com'), true);
