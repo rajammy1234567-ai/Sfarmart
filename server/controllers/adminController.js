@@ -206,13 +206,16 @@ export const getAdminData = async (req, res) => {
     const canAccessUsers = (isSuperAdmin || subAdminAccess.includes('users')) && (!requestedModule || requestedModule === 'users');
     const canAccessInquiries = (isSuperAdmin || subAdminAccess.includes('inquiries')) && (!requestedModule || requestedModule === 'inquiries');
 
-    // Query collections independently via Promise.allSettled with .lean() to prevent single-query cascading failures
+    // Helper to safely invoke .lean() if supported by query/mock to prevent single-query cascading failures
+    const execQuery = (q) => (q && typeof q.lean === 'function' ? q.lean() : q);
+
+    // Query collections independently via Promise.allSettled to prevent single-query cascading failures
     const [appsResult, jobsResult, usersResult, inqResult, vendorsResult] = await Promise.allSettled([
-      canAccessPartners ? Application.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
-      canAccessJobs ? JobApplication.find().sort({ appliedAt: -1 }).lean() : Promise.resolve([]),
-      canAccessUsers ? User.find({}, '-password -passwordHash -refreshToken -otp').sort({ _id: -1 }).lean() : Promise.resolve([]),
-      canAccessInquiries ? ContactInquiry.find().sort({ createdAt: -1 }).lean() : Promise.resolve([]),
-      canAccessPartners ? Vendor.find({}, '-passwordHash -password').sort({ createdAt: -1 }).lean() : Promise.resolve([])
+      canAccessPartners ? execQuery(Application.find().sort({ createdAt: -1 })) : Promise.resolve([]),
+      canAccessJobs ? execQuery(JobApplication.find().sort({ appliedAt: -1 })) : Promise.resolve([]),
+      canAccessUsers ? execQuery(User.find({}, '-password -passwordHash -refreshToken -otp').sort({ _id: -1 })) : Promise.resolve([]),
+      canAccessInquiries ? execQuery(ContactInquiry.find().sort({ createdAt: -1 })) : Promise.resolve([]),
+      canAccessPartners ? execQuery(Vendor.find({}, '-passwordHash -password').sort({ createdAt: -1 })) : Promise.resolve([])
     ]);
 
     const queryErrors = {};

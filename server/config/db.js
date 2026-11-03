@@ -37,6 +37,34 @@ export function validateStagingUri(rawUri) {
   return rawUri;
 }
 
+export function validateProductionUri(rawUri) {
+  if (!rawUri || typeof rawUri !== 'string' || !rawUri.trim()) {
+    throw new Error('FAIL-CLOSED: Production mode requires a valid MONGODB_URI in environment variables.');
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUri);
+  } catch {
+    throw new Error('FAIL-CLOSED: Production MONGODB_URI cannot be parsed as a valid URL.');
+  }
+
+  if (parsed.hostname.toLowerCase() === APPROVED_STAGING_HOST.toLowerCase()) {
+    throw new Error('FAIL-CLOSED: Production MONGODB_URI must not connect to the staging cluster (farmart-staging.gxn3bfw.mongodb.net).');
+  }
+
+  const targetDb = parsed.pathname.replace(/^\//, '').split('?')[0];
+  if (targetDb === APPROVED_DATABASE) {
+    throw new Error('FAIL-CLOSED: Production MONGODB_URI must not target the staging database (farmart_test_disposable).');
+  }
+
+  if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+    throw new Error('FAIL-CLOSED: Production mode cannot target a local host database.');
+  }
+
+  return rawUri;
+}
+
 export function sanitizeErrorMessage(msg) {
   if (!msg || typeof msg !== 'string') return '';
   return msg.replace(/mongodb(\+srv)?:\/\/[^@]+@/gi, 'mongodb$1://[REDACTED_CREDENTIALS]@');
@@ -87,7 +115,10 @@ const connectDB = async () => {
     }
 
     // Normal (non-staging) mode
-    if (!mongoUri) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      validateProductionUri(mongoUri);
+    } else if (!mongoUri) {
       console.warn('⚠️ MONGODB_URI not found in environment variables. Falling back to memory mode.');
       return false;
     }

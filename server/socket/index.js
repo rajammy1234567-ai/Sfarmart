@@ -8,11 +8,10 @@ import Admin from '../models/Admin.js';
 import { createEventBudget, boundedInteger } from '../utils/requestPolicy.js';
 import { canAccessOrder, idOf } from '../utils/deliveryPolicy.js';
 import { scheduleLongTimeout } from '../utils/timerUtils.js';
+import { isAllowedClientOrigin } from '../utils/corsPolicy.js';
 let ioInstance;
 export function initSocket(httpServer) {
- const allowedOrigins = (process.env.CLIENT_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
- const originAllowed = origin => !origin || allowedOrigins.includes(origin) ||
-   ((process.env.NODE_ENV !== 'production' || process.env.STAGING_MODE === 'true') && /^http:\/\/(localhost|127\.0\.0\.1):(517[3-9]|808[1-5])$/.test(origin));
+ const originAllowed = isAllowedClientOrigin;
  const io = new Server(httpServer, {
    cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) },
    allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin) && io.engine.clientsCount < boundedInteger(process.env.SOCKET_MAX_CONNECTIONS, 6000, 50, 10000)),

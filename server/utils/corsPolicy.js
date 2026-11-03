@@ -25,9 +25,11 @@ export const isAllowedClientOrigin = (origin) => {
   // Deployed Admin, Customer, and Partner web hostnames on Render + dynamic CLIENT_ORIGINS
   const allowed = [
     'https://sfarmart-admin-staging.onrender.com',
+    'https://sfarmart-admin.onrender.com',
     'https://farm-mart-admin.onrender.com',
     'https://farmart-admin.onrender.com',
     'https://farm-mart.onrender.com',
+    'https://sfarmart.onrender.com',
     ...getClientOrigins()
   ];
 

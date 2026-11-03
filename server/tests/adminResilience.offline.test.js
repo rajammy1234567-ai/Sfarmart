@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { isAllowedClientOrigin } from '../utils/corsPolicy.js';
+import { validateProductionUri } from '../config/db.js';
 import { errorHandler } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -104,5 +105,33 @@ describe('Auth Middleware CORS & Guard Verification', () => {
     assert.equal(headers['access-control-allow-origin'], 'https://farm-mart-admin.onrender.com');
     assert.equal(headers['access-control-allow-credentials'], 'true');
     assert.equal(jsonBody.code, 'AUTH_REQUIRED');
+  });
+});
+
+describe('Production Database Isolation Guard Verification', () => {
+  test('strictly rejects missing or empty MONGODB_URI in production', () => {
+    assert.throws(() => validateProductionUri(''), /FAIL-CLOSED: Production mode requires a valid MONGODB_URI/);
+    assert.throws(() => validateProductionUri(null), /FAIL-CLOSED: Production mode requires a valid MONGODB_URI/);
+  });
+
+  test('strictly rejects connections to staging cluster or disposable database', () => {
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@farmart-staging.gxn3bfw.mongodb.net/production_db?retryWrites=true'),
+      /FAIL-CLOSED: Production MONGODB_URI must not connect to the staging cluster/
+    );
+    assert.throws(
+      () => validateProductionUri('mongodb+srv://user:pass@production-cluster.mongodb.net/farmart_test_disposable?retryWrites=true'),
+      /FAIL-CLOSED: Production MONGODB_URI must not target the staging database/
+    );
+  });
+
+  test('strictly rejects localhost or invalid URLs in production', () => {
+    assert.throws(() => validateProductionUri('mongodb://localhost:27017/prod'), /FAIL-CLOSED: Production mode cannot target a local host database/);
+    assert.throws(() => validateProductionUri('not-a-valid-url'), /FAIL-CLOSED: Production MONGODB_URI cannot be parsed as a valid URL/);
+  });
+
+  test('accepts valid dedicated production database URL', () => {
+    const validProd = 'mongodb+srv://prod_user:SecureProdPass123@farmart-production.cluster.mongodb.net/farmart_production?retryWrites=true&w=majority';
+    assert.equal(validateProductionUri(validProd), validProd);
   });
 });
