@@ -67,7 +67,11 @@ export const getVendorsByCategory = async (req, res) => {
 
     const vendors = await Vendor.find({
       categories: category._id,
-      isActive: true
+      isActive: true,
+      isApproved: true,
+      _id: { $ne: new mongoose.Types.ObjectId('6aea07db1cf98f83bee27ee4') },
+      storeName: { $not: /controlled verification/i },
+      isStagingFixture: { $ne: true }
     })
       .populate('categories', 'name slug icon type')
       .sort({ isOpen: -1, rating: -1 });

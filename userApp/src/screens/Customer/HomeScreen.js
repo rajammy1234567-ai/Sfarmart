@@ -24,6 +24,9 @@ import { BrandBackground } from '../../components/common/BrandBackground';
 import { SafeImage, isValidImageUri } from '../../components/common/SafeImage';
 import { resolveBrowseCategories } from '../../config/categories';
 import { getScrollBottomPadding, getStickyCartBottom } from '../../theme/layout';
+import { useApp } from '../../context/AppContext';
+import storage from '../../services/storage';
+import { distanceKm, validCoordinates } from '../../utils/trackingUtils';
 
 export const HomeScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -41,6 +44,65 @@ export const HomeScreen = ({ navigation }) => {
     confirmReplaceCart,
     cancelReplaceCart
   } = useCart();
+
+  const { userProfile } = useApp();
+  const [customerLocation, setCustomerLocation] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolveLocation = async () => {
+      if (userProfile?.lat && userProfile?.lng && validCoordinates(userProfile.lat, userProfile.lng)) {
+        if (isMounted) setCustomerLocation({ lat: userProfile.lat, lng: userProfile.lng });
+        return;
+      }
+      try {
+        const raw = await storage.getItem('farmart_user_location');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (validCoordinates(parsed.lat, parsed.lng)) {
+            if (isMounted) setCustomerLocation({ lat: parsed.lat, lng: parsed.lng });
+            return;
+          }
+        }
+      } catch (_) {}
+      if (isMounted) setCustomerLocation(null);
+    };
+    resolveLocation();
+    return () => { isMounted = false; };
+  }, [userProfile?.lat, userProfile?.lng, userProfile?.address]);
+
+  const getStoreServiceability = (v, custLoc) => {
+    const vCoords = v.address?.location?.coordinates || v.location?.coordinates || (Array.isArray(v.coordinates) ? v.coordinates : null);
+    let vLat = null;
+    let vLng = null;
+    if (Array.isArray(vCoords) && vCoords.length >= 2) {
+      vLng = Number(vCoords[0]);
+      vLat = Number(vCoords[1]);
+    }
+    const maxRadiusKm = typeof v.deliveryRadiusKm === 'number' && v.deliveryRadiusKm > 0 ? v.deliveryRadiusKm : 7;
+
+    if (custLoc && validCoordinates(custLoc.lat, custLoc.lng) && validCoordinates(vLat, vLng)) {
+      const dist = distanceKm({ lat: vLat, lng: vLng }, custLoc);
+      if (Number.isFinite(dist)) {
+        const isDeliverable = dist <= maxRadiusKm;
+        return {
+          hasCoords: true,
+          distKm: dist,
+          maxRadiusKm,
+          isDeliverable,
+          statusText: isDeliverable ? `Deliverable (${dist.toFixed(1)} km)` : `Out of delivery range (${dist.toFixed(1)} km / ${maxRadiusKm} km max)`
+        };
+      }
+    }
+
+    return {
+      hasCoords: false,
+      distKm: null,
+      maxRadiusKm,
+      isDeliverable: null,
+      statusText: typeof v.deliveryRadiusKm === 'number' ? `Delivers within ${v.deliveryRadiusKm} km` : null
+    };
+  };
 
   const loadHomeData = useCallback(async (isPullToRefresh = false) => {
     if (isPullToRefresh) {
@@ -310,7 +372,7 @@ export const HomeScreen = ({ navigation }) => {
           </View>
         ) : (
           <>
-            {/* Reduced, Compact Promotional Card */}
+            {/* Promotional Card */}
             <View style={styles.promoCardWrapper}>
               <LinearGradient
                 colors={['#15803d', '#16a34a']}
@@ -322,16 +384,16 @@ export const HomeScreen = ({ navigation }) => {
                 <View style={styles.promoOrb2} pointerEvents="none" />
                 <View style={styles.promoBadge}>
                   <Ionicons name="sparkles" size={11} color="#ea580c" />
-                  <Text style={styles.promoBadgeText}>100% NEIGHBOURHOOD DIRECT</Text>
+                  <Text style={styles.promoBadgeText}>NEIGHBOURHOOD ESSENTIALS</Text>
                 </View>
-                <Text style={styles.promoTitle}>Farm fresh & daily essentials</Text>
+                <Text style={styles.promoTitle}>Daily essentials & groceries</Text>
                 <Text style={styles.promoSub}>
-                  Pure dairy, farm harvests & essentials delivered from verified local partners
+                  Browse products and essentials from local neighbourhood stores
                 </Text>
               </LinearGradient>
             </View>
 
-            {/* 1. Compact 8-Category Grid */}
+            {/* 1. Categories Grid */}
             {filteredCategories.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeaderRow}>
@@ -380,157 +442,196 @@ export const HomeScreen = ({ navigation }) => {
               </View>
             )}
 
-            {/* 2. Popular Stores Near You (Open stores first, closed stores afterward) */}
-            {popularStores.length > 0 && (
-              <View style={[styles.sectionContainer, styles.storesSectionSurface]}>
-                <View style={styles.sectionHeaderRow}>
-                  <View>
-                    <Text style={styles.sectionHeading}>Popular local stores</Text>
-                    <Text style={styles.sectionSubHeading}>Verified neighbourhood merchants</Text>
-                  </View>
+            {/* 2. Local Stores (Open stores first, closed stores afterward) */}
+            <View style={[styles.sectionContainer, styles.storesSectionSurface]}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={styles.sectionHeading}>Local stores</Text>
+                  <Text style={styles.sectionSubHeading}>Neighbourhood merchants & partners</Text>
+                </View>
+                {popularStores.length > 0 && (
                   <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
                     <Text style={styles.seeAllText}>View All</Text>
                   </TouchableOpacity>
-                </View>
-
-                {popularStores.length === 1 ? (
-                  <View style={styles.singleStoreWrapper}>
-                    {popularStores.map((v) => {
-                      const isOpen = v.isOpen !== false;
-                      const hasRating = Boolean(
-                        v.rating &&
-                        typeof v.rating === 'number' &&
-                        v.rating > 0 &&
-                        (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
-                      );
-                      return (
-                        <TouchableOpacity
-                          key={v._id}
-                          style={[styles.singleStoreCard, !isOpen && styles.singleStoreCardClosed]}
-                          onPress={() => navigation.navigate('VendorStore', { vendor: v })}
-                          activeOpacity={0.9}
-                          accessibilityRole="button"
-                          accessibilityLabel={v.storeName}
-                        >
-                          <View style={[styles.singleStoreImgContainer, !isOpen && { opacity: 0.65 }]}>
-                            <SafeImage
-                              source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                              style={styles.singleStoreImg}
-                              placeholderIcon="storefront-outline"
-                              placeholderIconSize={38}
-                            />
-                            {hasRating ? (
-                              <View style={styles.singleStoreRatingBadge}>
-                                <Ionicons name="star" size={11} color="#ffffff" />
-                                <Text style={styles.singleStoreRatingText}>{Number(v.rating).toFixed(1)}</Text>
-                              </View>
-                            ) : null}
-                            <View style={[styles.storeStatusPill, { backgroundColor: isOpen ? '#dcfce7' : '#fee2e2' }]}>
-                              <Text style={[styles.storeStatusPillText, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
-                                {isOpen ? '● Open Now' : '● Closed'}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.singleStoreInfo}>
-                            <View style={styles.singleStoreTitleRow}>
-                              <Text style={styles.singleStoreName} numberOfLines={1}>
-                                {v.storeName}
-                              </Text>
-                              <Text style={styles.singleStoreTypeTag}>
-                                {v.storeType === 'KIRANA' || v.storeType === 'STORE' ? '🏪 Local Kirana' : '🌾 Partner Shop'}
-                              </Text>
-                            </View>
-                            {v.description ? (
-                              <Text style={styles.singleStoreDesc} numberOfLines={2}>
-                                {v.description}
-                              </Text>
-                            ) : null}
-                            <View style={styles.singleStoreMetaRow}>
-                              <Text style={styles.singleStoreMetaItem}>
-                                ⚡ {v.avgPrepTimeMins || 25} mins prep
-                              </Text>
-                              {v.address?.city ? (
-                                <Text style={styles.singleStoreMetaItem}>
-                                  📍 {v.address.city}
-                                </Text>
-                              ) : null}
-                              <Text style={[styles.singleStoreMetaItem, { color: '#16a34a', fontWeight: '700' }]}>
-                                Min ₹{v.minOrderValue || 99}
-                              </Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.storeRail}
-                  >
-                    {popularStores.map((v) => {
-                      const isOpen = v.isOpen !== false;
-                      const hasRating = Boolean(
-                        v.rating &&
-                        typeof v.rating === 'number' &&
-                        v.rating > 0 &&
-                        (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
-                      );
-                      return (
-                        <TouchableOpacity
-                          key={v._id}
-                          style={[styles.storeCard, !isOpen && { opacity: 0.78 }]}
-                          onPress={() => navigation.navigate('VendorStore', { vendor: v })}
-                          activeOpacity={0.88}
-                        >
-                          <SafeImage
-                            source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                            style={[styles.storeImg, !isOpen && { opacity: 0.65 }]}
-                            placeholderIcon="storefront-outline"
-                            placeholderIconSize={28}
-                          />
-
-                          {hasRating ? (
-                            <View style={styles.storeRatingBadge}>
-                              <Ionicons name="star" size={10} color="#ffffff" />
-                              <Text style={styles.storeRatingText}>{Number(v.rating).toFixed(1)}</Text>
-                            </View>
-                          ) : null}
-
-                          <View style={styles.storeInfo}>
-                            <Text style={styles.storeName} numberOfLines={1}>
-                              {v.storeName}
-                            </Text>
-                            <Text style={styles.storePrepTime}>
-                              ⚡ {v.avgPrepTimeMins || 25} mins • {v.address?.city || 'Local Area'}
-                            </Text>
-                            <Text style={[styles.storeStatus, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
-                              {isOpen ? '🟢 Open Now' : '🔴 Closed'}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
                 )}
               </View>
-            )}
 
-            {/* 3. Actual Available Products Below Stores (Includes Krishna's Water Product) */}
-            {availableProducts.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <View style={styles.sectionHeaderRow}>
-                  <View>
-                    <Text style={styles.sectionHeading}>Available in your area</Text>
-                    <Text style={styles.sectionSubHeading}>Order direct from verified local partners</Text>
-                  </View>
+              {popularStores.length === 0 ? (
+                <View style={styles.honestEmptyBox}>
+                  <Ionicons name="storefront-outline" size={36} color="#94a3b8" />
+                  <Text style={styles.honestEmptyTitle}>No stores currently available</Text>
+                  <Text style={styles.honestEmptySub}>New neighbourhood stores will appear here once registered and active.</Text>
+                </View>
+              ) : popularStores.length === 1 ? (
+                <View style={styles.singleStoreWrapper}>
+                  {popularStores.map((v) => {
+                    const isOpen = v.isOpen !== false;
+                    const hasRating = Boolean(
+                      v.rating &&
+                      typeof v.rating === 'number' &&
+                      v.rating > 0 &&
+                      (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                    );
+                    const sInfo = getStoreServiceability(v, customerLocation);
+                    return (
+                      <TouchableOpacity
+                        key={v._id}
+                        style={[styles.singleStoreCard, !isOpen && styles.singleStoreCardClosed]}
+                        onPress={() => navigation.navigate('VendorStore', { vendor: v })}
+                        activeOpacity={0.9}
+                        accessibilityRole="button"
+                        accessibilityLabel={v.storeName}
+                      >
+                        <View style={[styles.singleStoreImgContainer, !isOpen && { opacity: 0.65 }]}>
+                          <SafeImage
+                            source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
+                            style={styles.singleStoreImg}
+                            placeholderIcon="storefront-outline"
+                            placeholderIconSize={38}
+                          />
+                          {hasRating ? (
+                            <View style={styles.singleStoreRatingBadge}>
+                              <Ionicons name="star" size={11} color="#ffffff" />
+                              <Text style={styles.singleStoreRatingText}>{Number(v.rating).toFixed(1)}</Text>
+                            </View>
+                          ) : null}
+                          <View style={[styles.storeStatusPill, { backgroundColor: isOpen ? '#dcfce7' : '#fee2e2' }]}>
+                            <Text style={[styles.storeStatusPillText, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
+                              {isOpen ? '● Open Now' : '● Closed'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.singleStoreInfo}>
+                          <View style={styles.singleStoreTitleRow}>
+                            <Text style={styles.singleStoreName} numberOfLines={1}>
+                              {v.storeName}
+                            </Text>
+                            <Text style={styles.singleStoreTypeTag}>
+                              {v.storeType === 'KIRANA' || v.storeType === 'STORE' ? '🏪 Local Kirana' : '🌾 Partner Shop'}
+                            </Text>
+                          </View>
+                          {v.description ? (
+                            <Text style={styles.singleStoreDesc} numberOfLines={2}>
+                              {v.description}
+                            </Text>
+                          ) : null}
+                          <View style={styles.singleStoreMetaRow}>
+                            {typeof v.avgPrepTimeMins === 'number' && v.avgPrepTimeMins > 0 ? (
+                              <Text style={styles.singleStoreMetaItem}>
+                                ⚡ {v.avgPrepTimeMins} mins prep
+                              </Text>
+                            ) : null}
+                            {v.address?.city ? (
+                              <Text style={styles.singleStoreMetaItem}>
+                                📍 {v.address.city}
+                              </Text>
+                            ) : null}
+                            {typeof v.minOrderValue === 'number' && v.minOrderValue > 0 ? (
+                              <Text style={[styles.singleStoreMetaItem, { color: '#16a34a', fontWeight: '700' }]}>
+                                Min ₹{v.minOrderValue}
+                              </Text>
+                            ) : null}
+                            {sInfo.statusText ? (
+                              <Text style={[
+                                styles.singleStoreMetaItem,
+                                sInfo.isDeliverable === true && { color: '#15803d', fontWeight: '700' },
+                                sInfo.isDeliverable === false && { color: '#b45309', fontWeight: '700' }
+                              ]}>
+                                {sInfo.isDeliverable === true ? '✓ ' : sInfo.isDeliverable === false ? '⚠ ' : '🚚 '}
+                                {sInfo.statusText}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.storeRail}
+                >
+                  {popularStores.map((v) => {
+                    const isOpen = v.isOpen !== false;
+                    const hasRating = Boolean(
+                      v.rating &&
+                      typeof v.rating === 'number' &&
+                      v.rating > 0 &&
+                      (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                    );
+                    const sInfo = getStoreServiceability(v, customerLocation);
+                    return (
+                      <TouchableOpacity
+                        key={v._id}
+                        style={[styles.storeCard, !isOpen && { opacity: 0.78 }]}
+                        onPress={() => navigation.navigate('VendorStore', { vendor: v })}
+                        activeOpacity={0.88}
+                      >
+                        <SafeImage
+                          source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
+                          style={[styles.storeImg, !isOpen && { opacity: 0.65 }]}
+                          placeholderIcon="storefront-outline"
+                          placeholderIconSize={28}
+                        />
+
+                        {hasRating ? (
+                          <View style={styles.storeRatingBadge}>
+                            <Ionicons name="star" size={10} color="#ffffff" />
+                            <Text style={styles.storeRatingText}>{Number(v.rating).toFixed(1)}</Text>
+                          </View>
+                        ) : null}
+
+                        <View style={styles.storeInfo}>
+                          <Text style={styles.storeName} numberOfLines={1}>
+                            {v.storeName}
+                          </Text>
+                          <Text style={styles.storePrepTime}>
+                            {typeof v.avgPrepTimeMins === 'number' && v.avgPrepTimeMins > 0 ? `⚡ ${v.avgPrepTimeMins}m • ` : ''}{v.address?.city || 'Local Store'}
+                          </Text>
+                          <Text style={[styles.storeStatus, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
+                            {isOpen ? '🟢 Open Now' : '🔴 Closed'}
+                          </Text>
+                          {sInfo.statusText ? (
+                            <Text style={[
+                              styles.storeMetaSmall,
+                              sInfo.isDeliverable === true && { color: '#15803d', fontWeight: '700' },
+                              sInfo.isDeliverable === false && { color: '#b45309', fontWeight: '700' }
+                            ]} numberOfLines={1}>
+                              {sInfo.isDeliverable === true ? '✓ ' : sInfo.isDeliverable === false ? '⚠ ' : ''}{sInfo.statusText}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* 3. Actual Available Products Below Stores */}
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={styles.sectionHeading}>Store products</Text>
+                  <Text style={styles.sectionSubHeading}>Direct from local store inventory</Text>
+                </View>
+                {availableProducts.length > 0 && (
                   <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
                     <Text style={styles.seeAllText}>View All ({availableProducts.length}) →</Text>
                   </TouchableOpacity>
-                </View>
+                )}
+              </View>
 
+              {availableProducts.length === 0 ? (
+                <View style={styles.honestEmptyBox}>
+                  <Ionicons name="cart-outline" size={36} color="#94a3b8" />
+                  <Text style={styles.honestEmptyTitle}>No products currently listed</Text>
+                  <Text style={styles.honestEmptySub}>Products from active stores will be displayed here.</Text>
+                </View>
+              ) : (
                 <View style={styles.productsGrid}>
                   {availableProducts.slice(0, 6).map((product) => (
                     <View
@@ -544,88 +645,7 @@ export const HomeScreen = ({ navigation }) => {
                     </View>
                   ))}
                 </View>
-              </View>
-            )}
-
-            {/* 4. Explore S-farmart (3 Attractive Core Showcase Cards) */}
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={styles.sectionHeading}>Explore S-farmart</Text>
-                  <Text style={styles.sectionSubHeading}>Neighbourhood freshness across our 3 core pillars</Text>
-                </View>
-              </View>
-
-              <View style={styles.exploreGrid}>
-                {/* Card 1: Daily Groceries */}
-                <TouchableOpacity
-                  style={[styles.exploreCard, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
-                  onPress={() => navigation.navigate('Catalog')}
-                  activeOpacity={0.88}
-                >
-                  <View style={styles.exploreCardTop}>
-                    <View style={[styles.exploreIconWrap, { backgroundColor: '#dcfce7' }]}>
-                      <Ionicons name="cart" size={20} color="#16a34a" />
-                    </View>
-                    <View style={[styles.exploreBadge, { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}>
-                      <Text style={[styles.exploreBadgeText, { color: '#15803d' }]}>● Live in your area</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.exploreCardTitle}>Daily Groceries & Staples</Text>
-                  <Text style={styles.exploreCardDesc}>
-                    Pantry staples, dairy & packaged essentials from trusted local neighbourhood kirana stores.
-                  </Text>
-                  <View style={styles.exploreCardFooter}>
-                    <Text style={[styles.exploreActionText, { color: '#16a34a' }]}>Browse Stores</Text>
-                    <Ionicons name="arrow-forward" size={14} color="#16a34a" />
-                  </View>
-                </TouchableOpacity>
-
-                {/* Card 2: Direct Farm Harvests */}
-                <View
-                  style={[styles.exploreCard, { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }]}
-                >
-                  <View style={styles.exploreCardTop}>
-                    <View style={[styles.exploreIconWrap, { backgroundColor: '#e2e8f0' }]}>
-                      <Ionicons name="leaf" size={20} color="#059669" />
-                    </View>
-                    <View style={[styles.exploreBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a' }]}>
-                      <Text style={[styles.exploreBadgeText, { color: '#b45309' }]}>Showcase · Coming soon</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.exploreCardTitle}>Direct Farm Harvests</Text>
-                  <Text style={styles.exploreCardDesc}>
-                    Fresh seasonal vegetables & fruits procured directly from regional village farm hubs without middlemen.
-                  </Text>
-                  <View style={styles.exploreCardFooter}>
-                    <Text style={[styles.exploreActionText, { color: '#64748b' }]}>Non-orderable showcase</Text>
-                  </View>
-                </View>
-
-                {/* Card 3: Home-Cooked Food */}
-                <TouchableOpacity
-                  style={[styles.exploreCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
-                  onPress={() => navigation.navigate('HomeRestro')}
-                  activeOpacity={0.88}
-                >
-                  <View style={styles.exploreCardTop}>
-                    <View style={[styles.exploreIconWrap, { backgroundColor: '#ffedd5' }]}>
-                      <Ionicons name="restaurant" size={20} color="#ea580c" />
-                    </View>
-                    <View style={[styles.exploreBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a' }]}>
-                      <Text style={[styles.exploreBadgeText, { color: '#b45309' }]}>Showcase · Coming soon</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.exploreCardTitle}>Ghar Ka Khana & Mithai</Text>
-                  <Text style={styles.exploreCardDesc}>
-                    Homely Punjabi thalis, regional curries & traditional homemade sweets prepared fresh by local home chefs.
-                  </Text>
-                  <View style={styles.exploreCardFooter}>
-                    <Text style={[styles.exploreActionText, { color: '#ea580c' }]}>Learn More</Text>
-                    <Ionicons name="arrow-forward" size={14} color="#ea580c" />
-                  </View>
-                </TouchableOpacity>
-              </View>
+              )}
             </View>
 
             {/* 5. Real Ghar Ka Khana (Rendered only if actual home chefs exist) */}
@@ -1364,6 +1384,36 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
     marginBottom: 8
+  },
+  honestEmptyBox: {
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginTop: 8
+  },
+  honestEmptyTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 8
+  },
+  honestEmptySub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 3,
+    maxWidth: 280
+  },
+  storeMetaSmall: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '600',
+    marginTop: 2
   },
   noSearchCard: {
     backgroundColor: '#ffffff',

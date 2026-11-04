@@ -186,16 +186,28 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
                         : '🏪 Local Mart'}
                     </Text>
 
-                    <Text style={styles.descText} numberOfLines={2}>
-                      {vendor.description || 'Farm-fresh products delivered right to your doorstep.'}
-                    </Text>
+                    {vendor.description ? (
+                      <Text style={styles.descText} numberOfLines={2}>
+                        {vendor.description}
+                      </Text>
+                    ) : null}
 
                     <View style={styles.metaRow}>
-                      <Text style={styles.metaItem}>
-                        {vendor.address?.city ? `📍 ${vendor.address.city} ` : ''}({vendor.deliveryRadiusKm || 7} km radius)
-                      </Text>
-                      <Text style={styles.dotSeparator}>•</Text>
-                      <Text style={styles.metaItem}>Min ₹{vendor.minOrderValue || 99}</Text>
+                      {vendor.address?.city ? (
+                        <Text style={styles.metaItem}>📍 {vendor.address.city}</Text>
+                      ) : null}
+                      {typeof vendor.deliveryRadiusKm === 'number' && vendor.deliveryRadiusKm > 0 ? (
+                        <>
+                          <Text style={styles.dotSeparator}>•</Text>
+                          <Text style={styles.metaItem}>{vendor.deliveryRadiusKm} km radius</Text>
+                        </>
+                      ) : null}
+                      {typeof vendor.minOrderValue === 'number' && vendor.minOrderValue > 0 ? (
+                        <>
+                          <Text style={styles.dotSeparator}>•</Text>
+                          <Text style={styles.metaItem}>Min ₹{vendor.minOrderValue}</Text>
+                        </>
+                      ) : null}
                     </View>
                   </View>
                 </TouchableOpacity>

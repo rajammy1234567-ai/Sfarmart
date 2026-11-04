@@ -10,7 +10,13 @@ export const getAllVendors = async (req, res) => {
   try {
     const paging = pagination(req.query);
     const { storeType, openOnly, category } = req.query;
-    const query = { isActive: true, isApproved: true };
+    const query = {
+      isActive: true,
+      isApproved: true,
+      _id: { $ne: new mongoose.Types.ObjectId('6aea07db1cf98f83bee27ee4') },
+      storeName: { $not: /controlled verification/i },
+      isStagingFixture: { $ne: true }
+    };
 
     if (storeType) {
       query.storeType = storeType.toUpperCase();
@@ -59,8 +65,8 @@ export const getVendorById = async (req, res) => {
     }
     const vendor = await Vendor.findById(id).populate('categories');
 
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    if (!vendor || !vendor.isActive || !vendor.isApproved || String(vendor._id) === '6aea07db1cf98f83bee27ee4' || vendor.isStagingFixture || /controlled verification/i.test(vendor.storeName)) {
+      return res.status(404).json({ success: false, code: 'VENDOR_NOT_FOUND', message: 'Vendor not found' });
     }
 
     res.json({ success: true, vendor });
@@ -82,7 +88,12 @@ export const getVendorProducts = async (req, res) => {
     }
     const { category, subCategory } = req.query;
 
-    const query = { vendor: id, isActive: true };
+    const targetVendor = await Vendor.findById(id);
+    if (!targetVendor || !targetVendor.isActive || !targetVendor.isApproved || String(targetVendor._id) === '6aea07db1cf98f83bee27ee4' || targetVendor.isStagingFixture || /controlled verification/i.test(targetVendor.storeName)) {
+      return res.status(404).json({ success: false, code: 'VENDOR_NOT_FOUND', message: 'Vendor not found' });
+    }
+
+    const query = { vendor: id, isActive: true, isPublished: { $ne: false } };
     if (category) query.category = category;
     if (subCategory) query.subCategory = subCategory;
 

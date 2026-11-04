@@ -571,8 +571,8 @@ export const CartProvider = ({ children }) => {
     }, 0);
 
     const deliveryFee = subtotal === 0 ? 0 : subtotal >= 200 ? 0 : 25;
-    const taxes = Math.round(subtotal * 0.05);
-    const platformFee = subtotal === 0 ? 0 : 5;
+    const taxes = vendorStoreType === 'HOME_CHEF' ? Math.round(subtotal * 0.05) : 0;
+    const platformFee = 0;
     const total = subtotal + deliveryFee + taxes + platformFee;
     const totalCount = items.reduce((acc, it) => acc + (parseInt(it.quantity ?? 1, 10) || 1), 0);
 

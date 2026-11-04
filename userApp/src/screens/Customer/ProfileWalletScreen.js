@@ -212,8 +212,10 @@ export const ProfileWalletScreen = ({ navigation }) => {
                   </Text>
                 </View>
               </View>
-              <View style={styles.customerBadge}>
-                <Text style={styles.customerBadgeText}>VERIFIED</Text>
+              <View style={[styles.customerBadge, !userProfile?.isPhoneVerified && { backgroundColor: '#f1f5f9' }]}>
+                <Text style={[styles.customerBadgeText, !userProfile?.isPhoneVerified && { color: '#64748b' }]}>
+                  {userProfile?.isPhoneVerified ? 'VERIFIED' : 'CUSTOMER'}
+                </Text>
               </View>
             </View>
 

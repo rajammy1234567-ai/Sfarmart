@@ -79,7 +79,20 @@ export const getAllProducts = async (req, res) => {
   try {
     const paging = pagination(req.query);
     const { category, vendor, search, isVeg, inStockOnly } = req.query;
-    const filter = { isActive: true };
+    // Active & approved non-test vendor discovery
+    const activeVendors = await Vendor.find({
+      isActive: true,
+      isApproved: true,
+      _id: { $ne: new mongoose.Types.ObjectId('6aea07db1cf98f83bee27ee4') },
+      storeName: { $not: /controlled verification/i },
+      isStagingFixture: { $ne: true }
+    }).distinct('_id');
+
+    const filter = {
+      isActive: true,
+      isPublished: { $ne: false },
+      vendor: { $in: activeVendors }
+    };
 
     // Search query
     if (search && search.trim()) {

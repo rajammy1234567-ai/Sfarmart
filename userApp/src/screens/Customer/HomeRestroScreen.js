@@ -193,7 +193,7 @@ export const HomeRestroScreen = ({ navigation }) => {
           <View style={styles.emptyCard}>
             <Ionicons name="restaurant-outline" size={44} color={colors.textMuted} />
             <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>No home chefs or dishes available</Text>
-            <Text style={{ marginTop: 4, fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 20 }}>There are currently no registered home chefs or homemade dishes available in your area. Please check back later.</Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 20 }}>There are currently no registered home chefs or homemade dishes available. Please check back later.</Text>
           </View>
         ) : (
           rows.map((row, idx) => (
