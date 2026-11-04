@@ -1,7 +1,8 @@
 import React, { Component } from 'react';
 import { StyleSheet, StatusBar, Platform, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef } from './src/navigation/navigationRef';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { CartProvider } from './src/context/CartContext';
 import { SocketProvider } from './src/context/SocketContext';
@@ -97,7 +98,6 @@ const linking = {
 // Inner container that passes customer auth token and userId to SocketProvider
 function UserAppContainer() {
   const { userProfile, token, isAuthenticated } = useApp();
-  const navRef = React.useRef(createNavigationContainerRef()).current;
 
   React.useEffect(() => {
     const unsubscribe = initNotificationListeners();
@@ -113,20 +113,20 @@ function UserAppContainer() {
   return (
     <SocketProvider token={token} userId={userProfile?._id || userProfile?.id}>
       <CartProvider key={userProfile?._id || userProfile?.id || 'guest'}>
-        <AuthGateProvider>
-          <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.card} />
-            <NavigationContainer
-              ref={navRef}
-              linking={linking}
-              onReady={() => {
-                setNavigationRef(navRef);
-              }}
-            >
+        <View style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor={colors.card} />
+          <NavigationContainer
+            ref={navigationRef}
+            linking={linking}
+            onReady={() => {
+              setNavigationRef(navigationRef);
+            }}
+          >
+            <AuthGateProvider>
               <RootNavigator />
-            </NavigationContainer>
-          </View>
-        </AuthGateProvider>
+            </AuthGateProvider>
+          </NavigationContainer>
+        </View>
       </CartProvider>
     </SocketProvider>
   );

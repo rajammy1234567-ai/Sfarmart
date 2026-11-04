@@ -14,8 +14,8 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { navigate } from '../navigation/navigationRef';
 import { colors } from '../theme/colors';
 import { useApp } from '../context/AppContext';
 import { apiService } from '../services/api';
@@ -32,7 +32,6 @@ export const AuthModal = ({
   onSuccess
 }) => {
   const { loginUser } = useApp();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState('PHONE'); // 'PHONE' | 'OTP'
   const [phone, setPhone] = useState('');
@@ -215,7 +214,7 @@ export const AuthModal = ({
                   handleDismiss();
                   if (onClose) onClose();
                   try {
-                    navigation.navigate('Login', { initialPhone: phone.trim() });
+                    navigate('Login', { initialPhone: phone.trim() });
                   } catch (e) {
                     console.warn('Navigation error:', e);
                   }
