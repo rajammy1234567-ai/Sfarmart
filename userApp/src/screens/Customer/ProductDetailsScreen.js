@@ -206,7 +206,16 @@ export const ProductDetailsScreen = ({ route, navigation }) => {
 
             {/* Quick Commerce Add Button / Stepper */}
             <View style={styles.btnWrapper}>
-              {isOutOfStock ? (
+              {product?.vendor?.isOpen === false ? (
+                <TouchableOpacity
+                  style={styles.storeClosedBtn}
+                  onPress={() => showAlert('Store Closed', `${product?.vendor?.storeName || 'This store'} is currently closed. Browsing is enabled, but ordering is paused.`)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="lock-closed" size={12} color="#94a3b8" style={{ marginRight: 4 }} />
+                  <Text style={styles.storeClosedBtnText}>STORE CLOSED</Text>
+                </TouchableOpacity>
+              ) : isOutOfStock ? (
                 <View style={styles.soldOutBtn}>
                   <Text style={styles.soldOutBtnText}>SOLD OUT</Text>
                 </View>
@@ -528,6 +537,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '800'
+  },
+  storeClosedBtn: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  storeClosedBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.3
   },
   btnWrapper: {
     minWidth: 104,

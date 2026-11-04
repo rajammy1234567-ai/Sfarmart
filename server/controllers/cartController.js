@@ -65,6 +65,14 @@ export const addItem = async (req, res) => {
       });
     }
 
+    if (product.vendor && (product.vendor.isOpen === false || product.vendor.isActive === false)) {
+      return res.status(400).json({
+        ok: false,
+        code: 'VENDOR_CLOSED',
+        message: `${product.vendor.storeName || 'This store'} is currently closed. Browsing is enabled, but adding items to cart is paused.`
+      });
+    }
+
     const productVendorId = (product.vendor?._id || product.vendor).toString();
     let cart = await Cart.findOne({ user: userId });
     if (!cart) {

@@ -57,6 +57,7 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
     currentCartVendorId && prodVendorId && currentCartVendorId.toString() !== prodVendorId.toString() && items?.length > 0
   );
 
+  const isStoreClosed = product.vendor?.isOpen === false;
   const isOutOfStock = product.inStock === false || (product.stockQty !== undefined && product.stockQty <= 0);
   const isLowStock = !isOutOfStock && product.stockQty !== undefined && product.stockQty <= 5 && product.stockQty > 0;
   const isMaxStockReached = !isOutOfStock && product.stockQty !== undefined && qty >= product.stockQty;
@@ -117,6 +118,13 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
           </View>
         ) : null}
 
+        {/* Store Closed Overlay */}
+        {isStoreClosed && (
+          <View style={styles.storeClosedOverlay}>
+            <Text style={styles.storeClosedPill}>STORE CLOSED</Text>
+          </View>
+        )}
+
         {/* Out of Stock Overlay */}
         {isOutOfStock && (
           <View style={styles.soldOutOverlay}>
@@ -172,7 +180,16 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
             ) : null}
           </View>
 
-          {isOutOfStock ? (
+          {isStoreClosed ? (
+            <TouchableOpacity
+              style={styles.storeClosedBtn}
+              onPress={() => showAlert('Store Closed', `${storeName || 'This store'} is currently closed. Browsing is enabled, but ordering is paused.`)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="lock-closed" size={10} color="#94a3b8" style={{ marginRight: 3 }} />
+              <Text style={styles.storeClosedBtnText}>CLOSED</Text>
+            </TouchableOpacity>
+          ) : isOutOfStock ? (
             <View style={styles.outOfStockBtn}>
               <Text style={styles.outOfStockBtnText}>UNAVAILABLE</Text>
             </View>
@@ -314,6 +331,40 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
     letterSpacing: 0.5
+  },
+  storeClosedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 4
+  },
+  storeClosedPill: {
+    color: '#ffffff',
+    fontSize: 9.5,
+    fontWeight: '800',
+    backgroundColor: 'rgba(185, 28, 28, 0.9)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    letterSpacing: 0.3
+  },
+  storeClosedBtn: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  storeClosedBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.3
   },
   details: {
     padding: 10,

@@ -64,7 +64,10 @@ export const CatalogScreen = ({ navigation }) => {
   };
 
   const filteredProducts = products.filter((p) => {
-    if (p.vendor?.isActive === false) return false;
+    if (p.isActive === false || p.isPublished === false) return false;
+    if (p.vendor?.isActive === false || p.vendor?.isApproved === false) return false;
+    const vId = (p.vendor?._id || p.vendor?.id || String(p.vendor || '')).toString();
+    if (vId === '6aea07db1cf98f83bee27ee4' || p.vendor?.storeName?.toLowerCase().includes('controlled verification')) return false;
     const matchesCat = selectedCat === 'all' || p.category === selectedCat || p.category?._id === selectedCat || p.category?.slug === selectedCat;
     const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;

@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components/Header';
 import { ShoppingFromBanner } from '../../components/ShoppingFromBanner';
+import { ProductCard } from '../../components/ProductCard';
 import { apiService } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { ClearCartModal } from '../../components/ClearCartModal';
@@ -28,6 +29,7 @@ export const HomeScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const [categories, setCategories] = useState(() => resolveBrowseCategories([]));
   const [vendors, setVendors] = useState([]);
+  const [products, setProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -48,13 +50,15 @@ export const HomeScreen = ({ navigation }) => {
     }
 
     try {
-      const [catResult, vendResult] = await Promise.allSettled([
+      const [catResult, vendResult, prodResult] = await Promise.allSettled([
         apiService.getHomeCategories(),
-        apiService.getVendors()
+        apiService.getVendors(),
+        apiService.getProducts()
       ]);
 
       const catRes = catResult.status === 'fulfilled' ? catResult.value : null;
       const vendRes = vendResult.status === 'fulfilled' ? vendResult.value : null;
+      const prodRes = prodResult.status === 'fulfilled' ? prodResult.value : null;
 
       let catFetchSucceeded = false;
       let vendFetchSucceeded = false;
@@ -67,6 +71,10 @@ export const HomeScreen = ({ navigation }) => {
       if (vendRes && vendRes.success && Array.isArray(vendRes.vendors)) {
         vendFetchSucceeded = true;
         setVendors(vendRes.vendors);
+      }
+
+      if (prodRes && prodRes.success && Array.isArray(prodRes.products)) {
+        setProducts(prodRes.products);
       }
 
       if (!catFetchSucceeded || !vendFetchSucceeded) {
@@ -89,23 +97,55 @@ export const HomeScreen = ({ navigation }) => {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  const filteredVendors = vendors.filter((v) => {
-    if (v.isActive === false) return false;
-    if (!isSearching) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      v.storeName?.toLowerCase().includes(q) ||
-      v.ownerName?.toLowerCase().includes(q) ||
-      v.description?.toLowerCase().includes(q) ||
-      v.storeType?.toLowerCase().includes(q) ||
-      v.address?.city?.toLowerCase().includes(q)
-    );
-  });
+  // Filter out inactive/unapproved and controlled test vendor
+  const filteredVendors = vendors
+    .filter((v) => {
+      if (v.isActive === false || v.isApproved === false) return false;
+      const vId = (v._id || v.id || '').toString();
+      if (vId === '6aea07db1cf98f83bee27ee4') return false;
+      if (v.storeName?.toLowerCase().includes('controlled verification')) return false;
+
+      if (!isSearching) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        v.storeName?.toLowerCase().includes(q) ||
+        v.ownerName?.toLowerCase().includes(q) ||
+        v.description?.toLowerCase().includes(q) ||
+        v.storeType?.toLowerCase().includes(q) ||
+        v.address?.city?.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      // Open stores appear first, closed stores afterward
+      const aOpen = a.isOpen !== false ? 1 : 0;
+      const bOpen = b.isOpen !== false ? 1 : 0;
+      if (aOpen !== bOpen) return bOpen - aOpen;
+      return 0;
+    });
 
   const filteredCategories = categories.filter((c) => {
     if (!isSearching) return true;
     const q = searchQuery.toLowerCase().trim();
     return c.name?.toLowerCase().includes(q) || c.slug?.toLowerCase().includes(q);
+  });
+
+  // Filter available products (exclude controlled test shop and unpublished items)
+  const availableProducts = products.filter((p) => {
+    if (p.isActive === false || p.isPublished === false) return false;
+    const v = p.vendor;
+    if (!v) return false;
+    if (v.isActive === false || v.isApproved === false) return false;
+    const vId = (v._id || v.id || String(v || '')).toString();
+    if (vId === '6aea07db1cf98f83bee27ee4') return false;
+    if (v.storeName?.toLowerCase().includes('controlled verification')) return false;
+
+    if (!isSearching) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      p.name?.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q) ||
+      v.storeName?.toLowerCase().includes(q)
+    );
   });
 
   // Segregate by merchant type
@@ -185,41 +225,47 @@ export const HomeScreen = ({ navigation }) => {
         {isSearching ? (
           <View style={styles.searchResultWrapper}>
             <Text style={styles.searchResultHeader}>
-              MATCHING RESULTS ({filteredVendors.length} STORES)
+              MATCHING RESULTS ({filteredVendors.length} STORES, {availableProducts.length} PRODUCTS)
             </Text>
 
-            {filteredVendors.length === 0 && filteredCategories.length === 0 ? (
+            {filteredVendors.length === 0 && filteredCategories.length === 0 && availableProducts.length === 0 ? (
               <View style={styles.noSearchCard}>
                 <Ionicons name="search-outline" size={40} color="#94a3b8" />
                 <Text style={styles.noSearchTitle}>No matching stores or produce</Text>
                 <Text style={styles.noSearchSub}>
-                  Try searching with keywords like "Fresh", "Milk", "Thali", or "Store"
+                  Try searching with keywords like "Fresh", "Milk", "Water", or "Store"
                 </Text>
                 <TouchableOpacity style={styles.clearSearchBtn} onPress={() => setSearchQuery('')}>
                   <Text style={styles.clearSearchBtnText}>Clear Search</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={{ gap: 12 }}>
+              <View style={{ gap: 14 }}>
                 {filteredVendors.map((v) => {
                   const isOpen = v.isOpen !== false;
+                  const hasRating = Boolean(
+                    v.rating &&
+                    typeof v.rating === 'number' &&
+                    v.rating > 0 &&
+                    (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                  );
                   return (
                     <TouchableOpacity
                       key={v._id}
-                      style={[styles.vendorListCard, !isOpen && { opacity: 0.75 }]}
+                      style={[styles.vendorListCard, !isOpen && { opacity: 0.78 }]}
                       onPress={() => navigation.navigate('VendorStore', { vendor: v })}
                       activeOpacity={0.9}
                     >
                       <SafeImage
                         source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                        style={styles.vendorListImg}
+                        style={[styles.vendorListImg, !isOpen && { opacity: 0.65 }]}
                         placeholderIcon="storefront-outline"
                         placeholderIconSize={32}
                       />
                       <View style={styles.vendorListInfo}>
                         <View style={styles.vendorListTopRow}>
                           <Text style={styles.vendorListTitle} numberOfLines={1}>{v.storeName}</Text>
-                          {v.rating && typeof v.rating === 'number' && v.rating > 0 && (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0) ? (
+                          {hasRating ? (
                             <View style={styles.ratingBadge}>
                               <Ionicons name="star" size={10} color="#ffffff" />
                               <Text style={styles.ratingBadgeText}>{Number(v.rating).toFixed(1)}</Text>
@@ -242,12 +288,29 @@ export const HomeScreen = ({ navigation }) => {
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* Matching Products during search */}
+                {availableProducts.length > 0 && (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={styles.searchSubSectionHeader}>Matching Products</Text>
+                    <View style={styles.productsGrid}>
+                      {availableProducts.map((p) => (
+                        <View key={p._id} style={styles.productCol}>
+                          <ProductCard
+                            product={p}
+                            onPress={() => navigation.navigate('ProductDetails', { product: p })}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </View>
         ) : (
           <>
-            {/* Reduced, Compact Promotional Card (No giant cropped strip) */}
+            {/* Reduced, Compact Promotional Card */}
             <View style={styles.promoCardWrapper}>
               <LinearGradient
                 colors={['#15803d', '#16a34a']}
@@ -261,18 +324,21 @@ export const HomeScreen = ({ navigation }) => {
                   <Ionicons name="sparkles" size={11} color="#ea580c" />
                   <Text style={styles.promoBadgeText}>100% NEIGHBOURHOOD DIRECT</Text>
                 </View>
-                <Text style={styles.promoTitle}>Farm fresh & homemade food</Text>
+                <Text style={styles.promoTitle}>Farm fresh & daily essentials</Text>
                 <Text style={styles.promoSub}>
-                  Pure dairy, seasonal fruits & home-cooked thalis from verified local partners
+                  Pure dairy, farm harvests & essentials delivered from verified local partners
                 </Text>
               </LinearGradient>
             </View>
 
-            {/* 1. Category Shortcuts */}
+            {/* 1. Compact 8-Category Grid */}
             {filteredCategories.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionHeading}>Explore categories</Text>
+                  <View>
+                    <Text style={styles.sectionHeading}>Explore categories</Text>
+                    <Text style={styles.sectionSubHeading}>Shop fresh essentials & local specialties</Text>
+                  </View>
                   <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
                     <Text style={styles.seeAllText}>See Catalog →</Text>
                   </TouchableOpacity>
@@ -288,7 +354,13 @@ export const HomeScreen = ({ navigation }) => {
                       accessibilityRole="button"
                       accessibilityLabel={`${cat.name} category`}
                     >
-                      <View style={[styles.catIconWrap, cat.bgColor ? { backgroundColor: cat.bgColor } : null]}>
+                      <View
+                        style={[
+                          styles.catIconWrap,
+                          cat.bgColor ? { backgroundColor: cat.bgColor } : null,
+                          cat.borderColor ? { borderColor: cat.borderColor, borderWidth: 1 } : null
+                        ]}
+                      >
                         {cat.vectorIcon ? (
                           <Ionicons
                             name={cat.vectorIcon}
@@ -300,7 +372,7 @@ export const HomeScreen = ({ navigation }) => {
                         )}
                       </View>
                       <Text style={styles.catName} numberOfLines={2}>
-                        {cat.name}
+                        {cat.shortName || cat.name}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -308,7 +380,7 @@ export const HomeScreen = ({ navigation }) => {
               </View>
             )}
 
-                        {/* 2. Popular Stores Near You (Kirana / Grocery) */}
+            {/* 2. Popular Stores Near You (Open stores first, closed stores afterward) */}
             {popularStores.length > 0 && (
               <View style={[styles.sectionContainer, styles.storesSectionSurface]}>
                 <View style={styles.sectionHeaderRow}>
@@ -325,22 +397,27 @@ export const HomeScreen = ({ navigation }) => {
                   <View style={styles.singleStoreWrapper}>
                     {popularStores.map((v) => {
                       const isOpen = v.isOpen !== false;
-                      const hasRating = Boolean(v.rating && typeof v.rating === 'number' && v.rating > 0 && (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0));
+                      const hasRating = Boolean(
+                        v.rating &&
+                        typeof v.rating === 'number' &&
+                        v.rating > 0 &&
+                        (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                      );
                       return (
                         <TouchableOpacity
                           key={v._id}
-                          style={[styles.singleStoreCard, !isOpen && { opacity: 0.75 }]}
+                          style={[styles.singleStoreCard, !isOpen && styles.singleStoreCardClosed]}
                           onPress={() => navigation.navigate('VendorStore', { vendor: v })}
                           activeOpacity={0.9}
                           accessibilityRole="button"
                           accessibilityLabel={v.storeName}
                         >
-                          <View style={styles.singleStoreImgContainer}>
+                          <View style={[styles.singleStoreImgContainer, !isOpen && { opacity: 0.65 }]}>
                             <SafeImage
                               source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
                               style={styles.singleStoreImg}
                               placeholderIcon="storefront-outline"
-                              placeholderIconSize={44}
+                              placeholderIconSize={38}
                             />
                             {hasRating ? (
                               <View style={styles.singleStoreRatingBadge}>
@@ -348,6 +425,11 @@ export const HomeScreen = ({ navigation }) => {
                                 <Text style={styles.singleStoreRatingText}>{Number(v.rating).toFixed(1)}</Text>
                               </View>
                             ) : null}
+                            <View style={[styles.storeStatusPill, { backgroundColor: isOpen ? '#dcfce7' : '#fee2e2' }]}>
+                              <Text style={[styles.storeStatusPillText, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
+                                {isOpen ? '● Open Now' : '● Closed'}
+                              </Text>
+                            </View>
                           </View>
 
                           <View style={styles.singleStoreInfo}>
@@ -355,11 +437,9 @@ export const HomeScreen = ({ navigation }) => {
                               <Text style={styles.singleStoreName} numberOfLines={1}>
                                 {v.storeName}
                               </Text>
-                              <View style={[styles.storeStatusPill, { backgroundColor: isOpen ? '#dcfce7' : '#fee2e2' }]}>
-                                <Text style={[styles.storeStatusPillText, { color: isOpen ? '#15803d' : '#b91c1c' }]}>
-                                  {isOpen ? '● Open' : '● Closed'}
-                                </Text>
-                              </View>
+                              <Text style={styles.singleStoreTypeTag}>
+                                {v.storeType === 'KIRANA' || v.storeType === 'STORE' ? '🏪 Local Kirana' : '🌾 Partner Shop'}
+                              </Text>
                             </View>
                             {v.description ? (
                               <Text style={styles.singleStoreDesc} numberOfLines={2}>
@@ -375,6 +455,9 @@ export const HomeScreen = ({ navigation }) => {
                                   📍 {v.address.city}
                                 </Text>
                               ) : null}
+                              <Text style={[styles.singleStoreMetaItem, { color: '#16a34a', fontWeight: '700' }]}>
+                                Min ₹{v.minOrderValue || 99}
+                              </Text>
                             </View>
                           </View>
                         </TouchableOpacity>
@@ -389,17 +472,22 @@ export const HomeScreen = ({ navigation }) => {
                   >
                     {popularStores.map((v) => {
                       const isOpen = v.isOpen !== false;
-                      const hasRating = v.rating && typeof v.rating === 'number' && v.rating > 0;
+                      const hasRating = Boolean(
+                        v.rating &&
+                        typeof v.rating === 'number' &&
+                        v.rating > 0 &&
+                        (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                      );
                       return (
                         <TouchableOpacity
                           key={v._id}
-                          style={[styles.storeCard, !isOpen && { opacity: 0.72 }]}
+                          style={[styles.storeCard, !isOpen && { opacity: 0.78 }]}
                           onPress={() => navigation.navigate('VendorStore', { vendor: v })}
                           activeOpacity={0.88}
                         >
                           <SafeImage
                             source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                            style={styles.storeImg}
+                            style={[styles.storeImg, !isOpen && { opacity: 0.65 }]}
                             placeholderIcon="storefront-outline"
                             placeholderIconSize={28}
                           />
@@ -430,7 +518,117 @@ export const HomeScreen = ({ navigation }) => {
               </View>
             )}
 
-            {/* 3. Ghar Ka Khana (Home Chefs) */}
+            {/* 3. Actual Available Products Below Stores (Includes Krishna's Water Product) */}
+            {availableProducts.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeaderRow}>
+                  <View>
+                    <Text style={styles.sectionHeading}>Available in your area</Text>
+                    <Text style={styles.sectionSubHeading}>Order direct from verified local partners</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
+                    <Text style={styles.seeAllText}>View All ({availableProducts.length}) →</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.productsGrid}>
+                  {availableProducts.slice(0, 6).map((product) => (
+                    <View
+                      key={product._id}
+                      style={availableProducts.length === 1 ? styles.singleProductCol : styles.productCol}
+                    >
+                      <ProductCard
+                        product={product}
+                        onPress={() => navigation.navigate('ProductDetails', { product })}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* 4. Explore S-farmart (3 Attractive Core Showcase Cards) */}
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={styles.sectionHeading}>Explore S-farmart</Text>
+                  <Text style={styles.sectionSubHeading}>Neighbourhood freshness across our 3 core pillars</Text>
+                </View>
+              </View>
+
+              <View style={styles.exploreGrid}>
+                {/* Card 1: Daily Groceries */}
+                <TouchableOpacity
+                  style={[styles.exploreCard, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
+                  onPress={() => navigation.navigate('Catalog')}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.exploreCardTop}>
+                    <View style={[styles.exploreIconWrap, { backgroundColor: '#dcfce7' }]}>
+                      <Ionicons name="cart" size={20} color="#16a34a" />
+                    </View>
+                    <View style={[styles.exploreBadge, { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}>
+                      <Text style={[styles.exploreBadgeText, { color: '#15803d' }]}>● Live in your area</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.exploreCardTitle}>Daily Groceries & Staples</Text>
+                  <Text style={styles.exploreCardDesc}>
+                    Pantry staples, dairy & packaged essentials from trusted local neighbourhood kirana stores.
+                  </Text>
+                  <View style={styles.exploreCardFooter}>
+                    <Text style={[styles.exploreActionText, { color: '#16a34a' }]}>Browse Stores</Text>
+                    <Ionicons name="arrow-forward" size={14} color="#16a34a" />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Card 2: Direct Farm Harvests */}
+                <View
+                  style={[styles.exploreCard, { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }]}
+                >
+                  <View style={styles.exploreCardTop}>
+                    <View style={[styles.exploreIconWrap, { backgroundColor: '#e2e8f0' }]}>
+                      <Ionicons name="leaf" size={20} color="#059669" />
+                    </View>
+                    <View style={[styles.exploreBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a' }]}>
+                      <Text style={[styles.exploreBadgeText, { color: '#b45309' }]}>Showcase · Coming soon</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.exploreCardTitle}>Direct Farm Harvests</Text>
+                  <Text style={styles.exploreCardDesc}>
+                    Fresh seasonal vegetables & fruits procured directly from regional village farm hubs without middlemen.
+                  </Text>
+                  <View style={styles.exploreCardFooter}>
+                    <Text style={[styles.exploreActionText, { color: '#64748b' }]}>Non-orderable showcase</Text>
+                  </View>
+                </View>
+
+                {/* Card 3: Home-Cooked Food */}
+                <TouchableOpacity
+                  style={[styles.exploreCard, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
+                  onPress={() => navigation.navigate('HomeRestro')}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.exploreCardTop}>
+                    <View style={[styles.exploreIconWrap, { backgroundColor: '#ffedd5' }]}>
+                      <Ionicons name="restaurant" size={20} color="#ea580c" />
+                    </View>
+                    <View style={[styles.exploreBadge, { backgroundColor: '#fef3c7', borderColor: '#fde68a' }]}>
+                      <Text style={[styles.exploreBadgeText, { color: '#b45309' }]}>Showcase · Coming soon</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.exploreCardTitle}>Ghar Ka Khana & Mithai</Text>
+                  <Text style={styles.exploreCardDesc}>
+                    Homely Punjabi thalis, regional curries & traditional homemade sweets prepared fresh by local home chefs.
+                  </Text>
+                  <View style={styles.exploreCardFooter}>
+                    <Text style={[styles.exploreActionText, { color: '#ea580c' }]}>Learn More</Text>
+                    <Ionicons name="arrow-forward" size={14} color="#ea580c" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* 5. Real Ghar Ka Khana (Rendered only if actual home chefs exist) */}
             {homeChefs.length > 0 && (
               <View style={[styles.sectionContainer, styles.chefsSectionSurface]}>
                 <View style={styles.sectionHeaderRow}>
@@ -451,23 +649,29 @@ export const HomeScreen = ({ navigation }) => {
 
                 {homeChefs.map((v) => {
                   const isOpen = v.isOpen !== false;
+                  const hasRating = Boolean(
+                    v.rating &&
+                    typeof v.rating === 'number' &&
+                    v.rating > 0 &&
+                    (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0)
+                  );
                   return (
                     <TouchableOpacity
                       key={v._id}
-                      style={[styles.homeChefCard, !isOpen && { opacity: 0.75 }]}
+                      style={[styles.homeChefCard, !isOpen && { opacity: 0.78 }]}
                       onPress={() => navigation.navigate('VendorStore', { vendor: v })}
                       activeOpacity={0.9}
                     >
                       <SafeImage
                         source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                        style={styles.homeChefImg}
+                        style={[styles.homeChefImg, !isOpen && { opacity: 0.65 }]}
                         placeholderIcon="restaurant-outline"
                         placeholderIconSize={36}
                       />
                       <View style={styles.homeChefInfo}>
                         <View style={styles.vendorListTopRow}>
                           <Text style={styles.homeChefTitle}>{v.storeName}</Text>
-                          {v.rating && typeof v.rating === 'number' && v.rating > 0 ? (
+                          {hasRating ? (
                             <View style={styles.ratingBadge}>
                               <Ionicons name="star" size={10} color="#ffffff" />
                               <Text style={styles.ratingBadgeText}>{Number(v.rating).toFixed(1)}</Text>
@@ -495,7 +699,7 @@ export const HomeScreen = ({ navigation }) => {
               </View>
             )}
 
-            {/* 4. Direct From Farms */}
+            {/* 6. Real Direct From Farms (Rendered only if actual farmers exist) */}
             {farmers.length > 0 && (
               <View style={[styles.sectionContainer, styles.farmsSectionSurface]}>
                 <View style={styles.sectionHeaderRow}>
@@ -539,7 +743,7 @@ export const HomeScreen = ({ navigation }) => {
         )}
       </ScrollView>
 
-      {/* Sticky Bottom Cart Bar (Calculated with dynamic dock clearance) */}
+      {/* Sticky Bottom Cart Bar */}
       {hasActiveCart && (
         <View style={[styles.stickyCartBar, { bottom: stickyCartBottom }]}>
           <View>
@@ -585,7 +789,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     marginHorizontal: 16,
-    marginTop: 10,
+    marginTop: 8,
     marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -608,18 +812,18 @@ const styles = StyleSheet.create({
   },
   promoCardWrapper: {
     marginHorizontal: 16,
-    marginTop: 6,
-    marginBottom: 14
+    marginTop: 4,
+    marginBottom: 12
   },
   promoCard: {
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    padding: 14,
     position: 'relative',
     overflow: 'hidden',
     shadowColor: '#15803d',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
     elevation: 3
   },
   promoOrb1: {
@@ -647,53 +851,51 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#ffffff',
     paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 7,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#fed7aa'
+    paddingVertical: 3,
+    borderRadius: 20,
+    marginBottom: 6
   },
   promoBadgeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#15803d',
     letterSpacing: 0.4
   },
   promoTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: '#ffffff',
-    lineHeight: 23
+    letterSpacing: -0.3
   },
   promoSub: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: 'rgba(255, 255, 255, 0.92)',
-    marginTop: 4,
-    lineHeight: 16
+    marginTop: 3,
+    lineHeight: 15
   },
   sectionContainer: {
     marginHorizontal: 16,
-    marginBottom: 18
+    marginBottom: 14
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12
+    marginBottom: 10
   },
   sectionHeading: {
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '800',
     color: '#0f172a',
     letterSpacing: -0.2
   },
   sectionSubHeading: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#64748b',
-    marginTop: 2
+    marginTop: 1
   },
   seeAllText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#15803d'
   },
@@ -707,16 +909,17 @@ const styles = StyleSheet.create({
     width: '23%',
     backgroundColor: '#ffffff',
     borderRadius: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     paddingHorizontal: 3,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
     shadowColor: 'rgba(15, 23, 42, 0.04)',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 4,
-    elevation: 1
+    elevation: 1,
+    marginBottom: 4
   },
   catIconWrap: {
     width: 44,
@@ -725,63 +928,52 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 6
+    marginBottom: 5
   },
   catIconText: {
-    fontSize: 24
+    fontSize: 22
   },
   catName: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1e293b',
     textAlign: 'center',
     lineHeight: 14
   },
   storesSectionSurface: {
-    backgroundColor: 'rgba(220, 252, 231, 0.45)',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#bbf7d0',
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 16
-  },
-  chefsSectionSurface: {
-    backgroundColor: 'rgba(255, 237, 213, 0.45)',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#fed7aa',
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 16
-  },
-  farmsSectionSurface: {
-    backgroundColor: 'rgba(240, 253, 244, 0.65)',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#bbf7d0',
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 16
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    marginBottom: 14,
+    shadowColor: 'rgba(15, 23, 42, 0.03)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 1
   },
   singleStoreWrapper: {
     paddingHorizontal: 0
   },
   singleStoreCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#bbf7d0',
+    borderColor: '#86efac',
     shadowColor: '#16a34a',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2
+  },
+  singleStoreCardClosed: {
+    borderColor: '#cbd5e1'
   },
   singleStoreImgContainer: {
     width: '100%',
-    aspectRatio: 16 / 9,
+    aspectRatio: 2.1,
     backgroundColor: '#f1f5f9',
     position: 'relative',
     overflow: 'hidden'
@@ -792,15 +984,15 @@ const styles = StyleSheet.create({
   },
   singleStoreRatingBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
+    top: 8,
+    right: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
     backgroundColor: '#16a34a',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 8
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6
   },
   singleStoreRatingText: {
     fontSize: 11,
@@ -808,7 +1000,7 @@ const styles = StyleSheet.create({
     color: '#ffffff'
   },
   singleStoreInfo: {
-    padding: 14
+    padding: 12
   },
   singleStoreTitleRow: {
     flexDirection: 'row',
@@ -816,26 +1008,38 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   singleStoreName: {
-    fontSize: 16.5,
+    fontSize: 15.5,
     fontWeight: '800',
     color: '#0f172a',
     flex: 1,
     marginRight: 8
   },
+  singleStoreTypeTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803d',
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
   storeStatusPill: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6
   },
   storeStatusPillText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800'
   },
   singleStoreDesc: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#64748b',
     marginTop: 4,
-    lineHeight: 16
+    lineHeight: 15
   },
   singleStoreMetaRow: {
     flexDirection: 'row',
@@ -844,25 +1048,24 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   singleStoreMetaItem: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#475569',
     fontWeight: '600'
   },
   storeRail: {
-    paddingHorizontal: 16,
-    gap: 12
+    gap: 10
   },
   storeCard: {
-    width: 210,
+    width: 200,
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: '#bbf7d0',
     shadowColor: '#16a34a',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
     position: 'relative'
   },
@@ -880,12 +1083,12 @@ const styles = StyleSheet.create({
     gap: 3,
     backgroundColor: '#16a34a',
     paddingHorizontal: 6,
-    paddingVertical: 2.5,
+    paddingVertical: 2,
     borderRadius: 6
   },
   storeRatingText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#ffffff'
   },
   storeInfo: {
@@ -893,7 +1096,7 @@ const styles = StyleSheet.create({
   },
   storeName: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f172a'
   },
   storePrepTime: {
@@ -902,48 +1105,123 @@ const styles = StyleSheet.create({
     marginTop: 2
   },
   storeStatus: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    marginTop: 3
+    marginTop: 4
+  },
+  productsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'flex-start'
+  },
+  productCol: {
+    width: '48%',
+    marginBottom: 4
+  },
+  singleProductCol: {
+    width: '52%',
+    maxWidth: 240,
+    marginBottom: 4
+  },
+  exploreGrid: {
+    gap: 10
+  },
+  exploreCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 14,
+    shadowColor: 'rgba(15, 23, 42, 0.04)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 1
+  },
+  exploreCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8
+  },
+  exploreIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  exploreBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    borderWidth: 1
+  },
+  exploreBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2
+  },
+  exploreCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: -0.2
+  },
+  exploreCardDesc: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 3,
+    lineHeight: 16
+  },
+  exploreCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8
+  },
+  exploreActionText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  chefsSectionSurface: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    padding: 12,
+    marginBottom: 14
   },
   chefBadgeRow: {
-    marginBottom: 3
+    flexDirection: 'row',
+    marginBottom: 4
   },
   chefBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-    paddingHorizontal: 6,
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 5,
-    alignSelf: 'flex-start'
+    borderRadius: 6
   },
   chefBadgeText: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '800',
     color: '#c2410c'
   },
   homeChefCard: {
-    flexDirection: 'row',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#fed7aa',
-    marginBottom: 12,
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
-    elevation: 2
+    marginBottom: 10,
+    flexDirection: 'row'
   },
   homeChefImg: {
-    width: 100,
-    height: 95,
-    backgroundColor: '#fff7ed'
+    width: 90,
+    height: 90,
+    backgroundColor: '#f1f5f9'
   },
   homeChefInfo: {
     flex: 1,
@@ -952,9 +1230,8 @@ const styles = StyleSheet.create({
   },
   homeChefTitle: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-    flex: 1
+    fontWeight: '800',
+    color: '#0f172a'
   },
   homeChefSub: {
     fontSize: 11.5,
@@ -965,59 +1242,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 6
+    marginTop: 4
+  },
+  farmsSectionSurface: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    padding: 12,
+    marginBottom: 14
   },
   farmBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    paddingHorizontal: 6,
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 5,
-    alignSelf: 'flex-start',
-    marginBottom: 3
+    borderRadius: 6,
+    marginBottom: 4
   },
   farmBadgeText: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '800',
     color: '#15803d'
   },
   farmerGrid: {
-    paddingHorizontal: 16,
-    gap: 10
+    gap: 8
   },
   farmerCard: {
     backgroundColor: '#ffffff',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
     overflow: 'hidden',
-    flexDirection: 'row',
-    padding: 10,
-    alignItems: 'center',
-    gap: 10
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    flexDirection: 'row'
   },
   farmerImg: {
-    width: 70,
-    height: 70,
-    borderRadius: 12,
+    width: 80,
+    height: 80,
     backgroundColor: '#f1f5f9'
   },
   farmerInfo: {
-    flex: 1
+    flex: 1,
+    padding: 10,
+    justifyContent: 'center'
   },
   farmerStoreName: {
-    fontSize: 13.5,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#0f172a'
   },
   farmerOwner: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#15803d',
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: 2
   },
   farmerDesc: {
@@ -1025,9 +1304,53 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 10
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#b91c1c',
+    fontWeight: '600'
+  },
+  errorRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6
+  },
+  errorRetryBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b91c1c'
+  },
+  initialLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16
+  },
+  initialLoadingText: {
+    fontSize: 12,
+    color: '#16a34a',
+    fontWeight: '600'
+  },
   searchResultWrapper: {
-    paddingHorizontal: 16,
-    marginBottom: 16
+    marginHorizontal: 16,
+    marginTop: 6
   },
   searchResultHeader: {
     fontSize: 12,
@@ -1036,69 +1359,79 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     letterSpacing: 0.5
   },
+  searchSubSectionHeader: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8
+  },
   noSearchCard: {
-    alignItems: 'center',
-    padding: 28,
     backgroundColor: '#ffffff',
     borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e2e8f0',
+    marginTop: 10
   },
   noSearchTitle: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f172a',
     marginTop: 10
   },
   noSearchSub: {
     fontSize: 12,
     color: '#64748b',
-    marginTop: 4,
-    textAlign: 'center'
+    textAlign: 'center',
+    marginTop: 4
   },
   clearSearchBtn: {
     marginTop: 14,
-    backgroundColor: '#16a34a',
+    backgroundColor: '#f1f5f9',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8
   },
   clearSearchBtnText: {
-    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '700',
-    fontSize: 12.5
+    color: '#475569'
   },
   vendorListCard: {
+    flexDirection: 'row',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    flexDirection: 'row',
     overflow: 'hidden',
-    padding: 10,
-    gap: 12
+    shadowColor: 'rgba(15, 23, 42, 0.04)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+    elevation: 1
   },
   vendorListImg: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
+    width: 95,
+    height: 95,
     backgroundColor: '#f1f5f9'
   },
   vendorListInfo: {
     flex: 1,
+    padding: 10,
     justifyContent: 'center'
   },
   vendorListTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8
+    justifyContent: 'space-between'
   },
   vendorListTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f172a',
-    flex: 1
+    flex: 1,
+    marginRight: 6
   },
   vendorListSub: {
     fontSize: 11.5,
@@ -1111,103 +1444,67 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4
   },
+  metaTag: {
+    fontSize: 10.5,
+    color: '#475569',
+    fontWeight: '600'
+  },
   ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 2.5,
     backgroundColor: '#16a34a',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5
   },
   ratingBadgeText: {
-    color: '#ffffff',
     fontSize: 10,
-    fontWeight: '700'
-  },
-  metaTag: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '500'
+    fontWeight: '800',
+    color: '#ffffff'
   },
   stickyCartBar: {
     position: 'absolute',
     left: 16,
     right: 16,
     backgroundColor: '#15803d',
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 18,
     paddingVertical: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: '#15803d',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
-    zIndex: 998
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 6
   },
   cartCountText: {
-    color: '#bbf7d0',
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '800',
+    color: '#86efac',
     letterSpacing: 0.5
   },
   cartTotalText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '800'
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#ffffff'
   },
   viewCartBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6
+    gap: 6,
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#4ade80'
   },
   viewCartText: {
-    color: '#ffffff',
+    fontSize: 13,
     fontWeight: '800',
-    fontSize: 14.5
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderWidth: 1,
-    borderColor: '#fca5a5',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 10,
-    borderRadius: 10,
-    gap: 8
-  },
-  errorBannerText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#b91c1c',
-    fontWeight: '500'
-  },
-  errorRetryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3
-  },
-  errorRetryBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#b91c1c'
-  },
-  initialLoadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 8
-  },
-  initialLoadingText: {
-    fontSize: 12.5,
-    color: '#64748b'
+    color: '#ffffff'
   }
 });
-
-export default HomeScreen;
