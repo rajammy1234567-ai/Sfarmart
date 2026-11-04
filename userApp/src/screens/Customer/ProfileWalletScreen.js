@@ -39,11 +39,11 @@ export const ProfileWalletScreen = ({ navigation }) => {
   const walletDisplay =
     userProfile?.walletRupees !== undefined
       ? userProfile.walletRupees
-      : userProfile?.walletBalance
+      : userProfile?.walletBalance !== undefined && userProfile.walletBalance !== null
       ? userProfile.walletBalance >= 1000
         ? userProfile.walletBalance / 100
         : userProfile.walletBalance
-      : 250;
+      : 0;
 
   const confirmLogout = async () => {
     setShowLogoutModal(false);

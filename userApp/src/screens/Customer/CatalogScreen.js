@@ -97,11 +97,13 @@ export const CatalogScreen = ({ navigation }) => {
         )}
       </View>
 
-      <CategoryChip
-        categories={categories}
-        selectedCategory={selectedCat}
-        onSelectCategory={setSelectedCat}
-      />
+      {categories && categories.length > 0 && (
+        <CategoryChip
+          categories={categories}
+          selectedCategory={selectedCat}
+          onSelectCategory={setSelectedCat}
+        />
+      )}
 
       <View style={styles.countRow}>
         <Text style={styles.countText}>{filteredProducts.length} items available</Text>
@@ -212,6 +214,7 @@ const styles = StyleSheet.create({
   },
   cardWrap: {
     flex: 1,
+    maxWidth: '48.5%',
     minWidth: 0
   },
   loadingContainer: {

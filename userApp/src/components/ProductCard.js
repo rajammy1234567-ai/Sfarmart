@@ -90,7 +90,7 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
       style={[styles.card, compact && styles.cardCompact, isOutOfStock && styles.cardOutOfStock]}
       onPress={onPress}
       activeOpacity={0.88}
-      accessibilityRole="button"
+      accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
       accessibilityLabel={`${product.name}, ₹${product.price}`}
     >
       {/* Product Image Area */}
@@ -183,7 +183,10 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
           {isStoreClosed ? (
             <TouchableOpacity
               style={styles.storeClosedBtn}
-              onPress={() => showAlert('Store Closed', `${storeName || 'This store'} is currently closed. Browsing is enabled, but ordering is paused.`)}
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                showAlert('Store Closed', `${storeName || 'This store'} is currently closed. Browsing is enabled, but ordering is paused.`);
+              }}
               activeOpacity={0.8}
             >
               <Ionicons name="lock-closed" size={10} color="#94a3b8" style={{ marginRight: 3 }} />
@@ -197,7 +200,10 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
             <View style={styles.qtyControl}>
               <TouchableOpacity
                 style={styles.qtyBtn}
-                onPress={() => updateQuantity(product._id || product.id, -1)}
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  updateQuantity(product._id || product.id, -1);
+                }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.7}
                 accessibilityLabel="Decrease quantity"
@@ -207,7 +213,8 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
               <Text style={styles.qtyText}>{qty}</Text>
               <TouchableOpacity
                 style={[styles.qtyBtn, isMaxStockReached && { opacity: 0.35 }]}
-                onPress={() => {
+                onPress={(e) => {
+                  e?.stopPropagation?.();
                   if (isMaxStockReached) {
                     showAlert('Stock Limit', `Only ${product.stockQty} pack(s) available in stock.`);
                     return;
@@ -224,7 +231,10 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
           ) : (
             <TouchableOpacity
               style={[styles.addButton, isDifferentVendor && styles.addButtonConflict]}
-              onPress={() => addToCart(product)}
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                addToCart(product);
+              }}
               activeOpacity={0.8}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               accessibilityRole="button"

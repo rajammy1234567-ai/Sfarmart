@@ -296,8 +296,12 @@ export const ProductDetailsScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="clock-fast" size={22} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.trustTitle}>Superfast Hyperlocal Delivery</Text>
-              <Text style={styles.trustSub}>Direct from neighbor store to your doorstep</Text>
+              <Text style={styles.trustTitle}>Hyperlocal Partner Delivery</Text>
+              <Text style={styles.trustSub}>
+                {product.vendor?.deliveryRadiusKm
+                  ? `Delivers within ${product.vendor.deliveryRadiusKm} km direct from local partner`
+                  : 'Direct from neighbourhood store to your doorstep'}
+              </Text>
             </View>
           </View>
           
@@ -306,8 +310,8 @@ export const ProductDetailsScreen = ({ route, navigation }) => {
               <MaterialCommunityIcons name="shield-check" size={22} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.trustTitle}>100% Genuine & Fresh</Text>
-              <Text style={styles.trustSub}>Direct partner inventory with genuine quality</Text>
+              <Text style={styles.trustTitle}>Authentic Local Quality</Text>
+              <Text style={styles.trustSub}>Sourced and fulfilled directly by {storeName}</Text>
             </View>
           </View>
         </View>

@@ -176,8 +176,10 @@ export const VendorStoreScreen = ({ route, navigation }) => {
           <Text style={styles.heroStoreName}>{vendor?.storeName}</Text>
           <Text style={styles.heroStoreType}>
             {vendor?.storeType === 'HOME_CHEF'
-              ? '👩‍🍳 Fresh Home Food & Mithai'
-              : '🌾 Direct Farm Harvest'}
+              ? '👩‍🍳 Fresh Home Food & Meals'
+              : vendor?.storeType === 'FARMER'
+              ? '🌾 Direct Farm Harvest'
+              : '🏪 Neighbourhood Kirana & Essentials'}
           </Text>
           <View style={styles.heroBadgesRow}>
             {vendor?.rating && typeof vendor?.rating === 'number' && vendor.rating > 0 && (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0) ? (
@@ -186,8 +188,12 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                 <Text style={styles.ratingBadgeText}>{Number(vendor.rating).toFixed(1)}</Text>
               </View>
             ) : null}
-            <Text style={styles.heroBadgeText}>⚡ {vendor?.avgPrepTimeMins || 25} mins prep</Text>
-            <Text style={styles.heroBadgeText}>• Min ₹{vendor?.minOrderValue || 99}</Text>
+            {typeof vendor?.avgPrepTimeMins === 'number' && vendor.avgPrepTimeMins > 0 ? (
+              <Text style={styles.heroBadgeText}>⚡ {vendor.avgPrepTimeMins} mins prep</Text>
+            ) : null}
+            {typeof vendor?.minOrderValue === 'number' && vendor.minOrderValue > 0 ? (
+              <Text style={styles.heroBadgeText}>• Min ₹{vendor.minOrderValue}</Text>
+            ) : null}
 
             {/* Store Open/Closed Badge */}
             <View
@@ -350,7 +356,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                       {!isStoreOpen ? (
                         <TouchableOpacity
                           style={styles.storeClosedBtn}
-                          onPress={handleClosedStoreTap}
+                          onPress={(e) => { e?.stopPropagation?.(); handleClosedStoreTap(); }}
                           activeOpacity={0.8}
                         >
                           <Ionicons name="lock-closed" size={10} color="#94a3b8" style={{ marginRight: 3 }} />
@@ -364,7 +370,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                         <View style={styles.stepperBox}>
                           <TouchableOpacity
                             style={styles.stepperBtn}
-                            onPress={() => updateQuantity(product._id, -1)}
+                            onPress={(e) => { e?.stopPropagation?.(); updateQuantity(product._id, -1); }}
                           >
                             <Text style={styles.stepperBtnText}>−</Text>
                           </TouchableOpacity>
@@ -385,7 +391,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                       ) : (
                         <TouchableOpacity
                           style={styles.addBtn}
-                          onPress={() => addToCart({ ...product, vendor })}
+                          onPress={(e) => { e?.stopPropagation?.(); addToCart({ ...product, vendor }); }}
                           activeOpacity={0.85}
                         >
                           <Text style={styles.addBtnText}>ADD</Text>

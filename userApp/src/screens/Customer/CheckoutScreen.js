@@ -984,23 +984,23 @@ export const CheckoutScreen = ({ navigation }) => {
               {
                 id: 'COD',
                 icon: 'cash-outline',
-                title: 'Cash on Delivery',
-                sub: 'Pay the rider on delivery',
-                tag: null
+                title: 'Cash on Delivery (COD)',
+                sub: 'Pay cash or UPI to rider upon safe delivery',
+                tag: 'RECOMMENDED'
               },
               {
                 id: 'UPI',
                 icon: 'flash-outline',
-                title: 'UPI (GPay, PhonePe, Paytm, QR)',
-                sub: 'Instant & secure via Razorpay',
-                tag: 'RECOMMENDED'
+                title: 'UPI (GPay, PhonePe, Paytm)',
+                sub: 'Digital payment via Razorpay test gateway',
+                tag: 'TEST MODE'
               },
               {
                 id: 'CARD',
                 icon: 'card-outline',
                 title: 'Credit / Debit Card',
-                sub: 'Visa, Mastercard, RuPay & more via Razorpay',
-                tag: null
+                sub: 'Card payment via Razorpay test gateway',
+                tag: 'TEST MODE'
               }
             ].map((opt) => (
               <AnimatedPayOption
