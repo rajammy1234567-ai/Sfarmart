@@ -379,6 +379,9 @@ export const updateApplicationStatus = async (req, res) => {
             vendorDoc.isApproved = false;
             vendorDoc.isActive = false;
             vendorDoc.isOpen = false;
+          } else if (status === 'INACTIVE' || status === 'DEACTIVATE') {
+            vendorDoc.isActive = false;
+            vendorDoc.isOpen = false;
           }
           await vendorDoc.save();
           return res.json({

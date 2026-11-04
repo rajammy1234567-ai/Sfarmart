@@ -43,4 +43,15 @@ test('User Model Email Normalization & Partial Index Behavior Suite', async (t) 
     user.email = '';
     assert.equal(user.email, undefined, 'Setting email to empty string must unset to undefined');
   });
+
+  await t.test('6. Validating a User document executes pre-validate hook without throwing', async () => {
+    const user = new User({
+      phone: '9876543210',
+      email: ''
+    });
+    await assert.doesNotReject(async () => {
+      await user.validate();
+    });
+    assert.equal(user.email, undefined, 'Validation must complete and email must be undefined');
+  });
 });

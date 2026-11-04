@@ -149,6 +149,13 @@ export const toggleRiderStatus = async (req, res) => {
 
     const targetStatus = status || (rider.status === 'OFFLINE' ? 'ONLINE_IDLE' : 'OFFLINE');
     if (!['OFFLINE','ONLINE_IDLE'].includes(targetStatus)) return res.status(400).json({success:false,message:'Invalid duty status.'});
+    if (targetStatus === 'ONLINE_IDLE' && (!rider.kyc?.aadhaarVerified || !rider.kyc?.drivingLicenseVerified)) {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_PENDING',
+        message: 'KYC documents pending verification. You must have verified Aadhaar and Driving License before accepting delivery orders.'
+      });
+    }
     if (targetStatus === 'ONLINE_IDLE' && (!rider.locationUpdatedAt || Date.now()-new Date(rider.locationUpdatedAt).getTime()>120000)) return res.status(400).json({success:false,message:'Enable GPS and send a fresh location before going online.'});
     rider.status = targetStatus;
     await rider.save();

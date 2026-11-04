@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 
 import * as authController from '../controllers/authController.js';
 import * as authMiddleware from '../middleware/auth.js';
-import { loginUser } from '../controllers/userController.js';
+import { loginUser, registerUser } from '../controllers/userController.js';
 import User from '../models/User.js';
 import RefreshToken from '../models/RefreshToken.js';
 
@@ -317,6 +317,74 @@ test('Customer Login & Refresh Token Persistence Strictness', async (t) => {
       assert.equal(req.user.phone, '9876543210');
     } finally {
       User.findById = originalFindById;
+    }
+  });
+  await t.test('7. registerUser successfully provisions new user without pre-validate errors', async () => {
+    const originalReadyState = mongoose.connection.readyState;
+    Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+    const originalFindOne = User.findOne;
+    User.findOne = () => Promise.resolve(null); // No duplicate user
+
+    let createdUserDoc = null;
+    const originalCreate = User.create;
+    User.create = async (doc) => {
+      // Validate with schema to ensure pre-validate hook does not throw
+      const userInstance = new User(doc);
+      await userInstance.validate();
+      createdUserDoc = {
+        ...doc,
+        _id: '6abe1c6f51a948ed6b0236ee',
+        toRupees: () => 250
+      };
+      return createdUserDoc;
+    };
+
+    let persistedTokenDoc = null;
+    const originalTokenCreate = RefreshToken.create;
+    RefreshToken.create = async (doc) => {
+      persistedTokenDoc = doc;
+      return doc;
+    };
+
+    let statusCode = 200;
+    let responseData = null;
+
+    const req = {
+      body: {
+        name: 'Rohan Sharma',
+        phone: '9876543210',
+        password: 'Password123',
+        city: 'Ludhiana',
+        deviceId: 'android_test_device'
+      }
+    };
+    const res = {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(data) {
+        responseData = data;
+        return this;
+      }
+    };
+
+    try {
+      await registerUser(req, res);
+      assert.equal(statusCode, 201, 'Must return 201 on successful registration');
+      assert.ok(responseData.success, 'Must report success');
+      assert.ok(responseData.accessToken, 'Must return access token');
+      assert.ok(responseData.refreshToken, 'Must return refresh token');
+      assert.equal(responseData.user.phone, '9876543210');
+      assert.equal(responseData.user.name, 'Rohan Sharma');
+      assert.equal(createdUserDoc.walletBalance, 25000, 'Initial wallet balance must be 25000 paisa (₹250)');
+      assert.ok(persistedTokenDoc, 'Refresh token must be stored');
+    } finally {
+      User.findOne = originalFindOne;
+      User.create = originalCreate;
+      RefreshToken.create = originalTokenCreate;
+      Object.defineProperty(mongoose.connection, 'readyState', { value: originalReadyState, configurable: true });
     }
   });
 });

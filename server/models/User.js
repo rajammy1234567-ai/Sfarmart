@@ -110,11 +110,10 @@ userSchema.index(
   }
 );
 
-userSchema.pre('validate', function (next) {
+userSchema.pre('validate', function () {
   if (typeof this.email === 'string' && this.email.trim() === '') {
     this.email = undefined;
   }
-  next();
 });
 
 userSchema.virtual('isActive').get(function () {

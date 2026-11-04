@@ -64,8 +64,8 @@ const riderSchema = new mongoose.Schema(
       default: 0
     },
     kyc: {
-      aadhaarVerified: { type: Boolean, default: true },
-      drivingLicenseVerified: { type: Boolean, default: true },
+      aadhaarVerified: { type: Boolean, default: false },
+      drivingLicenseVerified: { type: Boolean, default: false },
       photoUrl: {
         type: String,
         default: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'

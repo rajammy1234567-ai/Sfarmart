@@ -125,18 +125,30 @@ export const ProfileScreen = () => {
 
           <View style={styles.kycRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
+              <Ionicons
+                name={rider?.kyc?.drivingLicenseVerified ? "checkmark-circle" : "time-outline"}
+                size={18}
+                color={rider?.kyc?.drivingLicenseVerified ? "#16a34a" : "#f59e0b"}
+              />
               <Text style={styles.kycText}>Commercial Driving License</Text>
             </View>
-            <Text style={styles.verifiedBadge}>VERIFIED</Text>
+            <Text style={rider?.kyc?.drivingLicenseVerified ? styles.verifiedBadge : styles.pendingBadge}>
+              {rider?.kyc?.drivingLicenseVerified ? 'VERIFIED' : 'PENDING'}
+            </Text>
           </View>
 
           <View style={styles.kycRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
+              <Ionicons
+                name={rider?.kyc?.aadhaarVerified ? "checkmark-circle" : "time-outline"}
+                size={18}
+                color={rider?.kyc?.aadhaarVerified ? "#16a34a" : "#f59e0b"}
+              />
               <Text style={styles.kycText}>Aadhaar Identity Verification</Text>
             </View>
-            <Text style={styles.verifiedBadge}>VERIFIED</Text>
+            <Text style={rider?.kyc?.aadhaarVerified ? styles.verifiedBadge : styles.pendingBadge}>
+              {rider?.kyc?.aadhaarVerified ? 'VERIFIED' : 'PENDING'}
+            </Text>
           </View>
 
           <View style={styles.kycRow}>
@@ -413,6 +425,17 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#bbf7d0'
+  },
+  pendingBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#d97706',
+    backgroundColor: '#fffbeb',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#fde68a'
   },
   supportBtn: {
     flexDirection: 'row',
