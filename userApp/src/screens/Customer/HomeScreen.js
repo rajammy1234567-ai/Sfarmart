@@ -28,7 +28,7 @@ import { useApp } from '../../context/AppContext';
 import storage from '../../services/storage';
 import { distanceKm, validCoordinates } from '../../utils/trackingUtils';
 
-export const HomeScreen = ({ navigation }) => {
+export const HomeScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [categories, setCategories] = useState(() => resolveBrowseCategories([]));
   const [vendors, setVendors] = useState([]);
@@ -49,6 +49,12 @@ export const HomeScreen = ({ navigation }) => {
 
   const { userProfile } = useApp();
   const [customerLocation, setCustomerLocation] = useState(null);
+
+  useEffect(() => {
+    if (route?.params?.selectedCategory) {
+      setSelectedCategory(route.params.selectedCategory);
+    }
+  }, [route?.params?.selectedCategory]);
 
   useEffect(() => {
     let isMounted = true;

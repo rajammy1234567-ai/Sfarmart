@@ -5,11 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   StatusBar,
   Platform,
-  Alert,
   AppState
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,13 +19,17 @@ import { useCustomerSocket } from '../../context/SocketContext';
 import { ClearCartModal } from '../../components/ClearCartModal';
 import { colors } from '../../theme/colors';
 import { showAlert } from '../../utils/alert';
-import { SafeImage, isValidImageUri } from '../../components/common/SafeImage';
+import { SafeImage } from '../../components/common/SafeImage';
 import { isPreparedFoodProduct } from '../../components/ProductCard';
 
 export const VendorStoreScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const initialVendor = route.params?.vendor || {};
-  const targetVendorId = route.params?.vendor?._id || route.params?.vendorId || route.params?.vendor?.id || initialVendor._id;
+  const targetVendorId =
+    route.params?.vendor?._id ||
+    route.params?.vendorId ||
+    route.params?.vendor?.id ||
+    initialVendor._id;
   const [vendor, setVendor] = useState(initialVendor);
   const [products, setProducts] = useState([]);
   const [selectedSubCat, setSelectedSubCat] = useState('ALL');
@@ -51,11 +53,18 @@ export const VendorStoreScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     let release = () => {};
-    const subscribe = () => { release(); release = watchCatalog(targetVendorId || vendor?._id); };
+    const subscribe = () => {
+      release();
+      release = watchCatalog(targetVendorId || vendor?._id);
+    };
     if (navigation.isFocused?.() !== false) subscribe();
     const onFocus = navigation.addListener('focus', subscribe);
     const onBlur = navigation.addListener('blur', () => release());
-    return () => { release(); onFocus(); onBlur(); };
+    return () => {
+      release();
+      onFocus();
+      onBlur();
+    };
   }, [targetVendorId || vendor?._id, navigation, watchCatalog]);
 
   const isStoreOpen = vendor?.isOpen !== false;
@@ -63,7 +72,6 @@ export const VendorStoreScreen = ({ route, navigation }) => {
   // Real-time stock update listener via WebSocket
   useEffect(() => {
     if (productStockUpdate && productStockUpdate.productId) {
-      console.log('⚡ Real-time stock reflection in store:', productStockUpdate);
       setProducts((prev) =>
         prev.map((p) => {
           if ((p._id || p.id) === productStockUpdate.productId) {
@@ -88,7 +96,9 @@ export const VendorStoreScreen = ({ route, navigation }) => {
       // Periodic polling to stay updated with live Partner Online/Offline status
       return startPolling(() => fetchVendorDetails(vId), {
         intervalMs: 20000,
-        active: () => navigation.isFocused?.() !== false && (AppState.currentState == null || AppState.currentState === 'active')
+        active: () =>
+          navigation.isFocused?.() !== false &&
+          (AppState.currentState == null || AppState.currentState === 'active')
       });
     }
   }, [targetVendorId, vendor?._id]);
@@ -130,11 +140,17 @@ export const VendorStoreScreen = ({ route, navigation }) => {
   };
 
   // Extract unique subCategories or categories
-  const subCategories = ['ALL', ...new Set(products.map((p) => p.subCategory || p.category?.name).filter(Boolean))];
+  const subCategories = [
+    'ALL',
+    ...new Set(products.map((p) => p.subCategory || p.category?.name).filter(Boolean))
+  ];
 
-  const filteredProducts = selectedSubCat === 'ALL'
-    ? products
-    : products.filter((p) => (p.subCategory || p.category?.name) === selectedSubCat);
+  const filteredProducts =
+    selectedSubCat === 'ALL'
+      ? products
+      : products.filter(
+          (p) => (p.subCategory || p.category?.name) === selectedSubCat
+        );
 
   const getItemQuantity = (productId) => {
     const item = items.find(
@@ -148,158 +164,216 @@ export const VendorStoreScreen = ({ route, navigation }) => {
     showAlert('Store Currently Closed', msg);
   };
 
+  const hasRealRating = Boolean(
+    vendor?.rating &&
+      typeof vendor?.rating === 'number' &&
+      vendor.rating > 0 &&
+      (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0)
+  );
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Store Banner Hero Header */}
-      <View style={styles.heroBanner}>
-        <SafeImage
-          source={{
-            uri: isValidImageUri(vendor?.banner) ? vendor.banner : null
-          }}
-          style={styles.heroImg}
-          placeholderIcon="storefront-outline"
-          placeholderIconSize={48}
-        />
-        <View style={styles.heroOverlay} />
+      {/* Floating Back Button with Guaranteed Safe-Area Top Clearance */}
+      <TouchableOpacity
+        style={[styles.backButtonCircle, { top: Math.max(16, insets.top + 8) }]}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
+        <Ionicons name="arrow-back" size={20} color="#ffffff" />
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.backButtonCircle}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={20} color="#ffffff" />
-        </TouchableOpacity>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom:
+              billSummary.totalCount > 0
+                ? Math.max(96, insets.bottom + 84)
+                : Math.max(30, insets.bottom + 24)
+          }
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Bounded Hero Banner */}
+        <View style={styles.heroBanner}>
+          <SafeImage
+            source={{ uri: vendor?.banner }}
+            style={styles.heroImg}
+            placeholderIcon="storefront-outline"
+            placeholderIconSize={48}
+          />
+          <View style={styles.heroOverlay} />
+        </View>
 
-        <View style={styles.heroTextContainer}>
-          <Text style={styles.heroStoreName}>{vendor?.storeName}</Text>
-          <Text style={styles.heroStoreType}>
+        {/* Store Info Surface Card - Readable, High Contrast */}
+        <View style={styles.storeCard}>
+          <Text style={styles.storeName} numberOfLines={2}>
+            {vendor?.storeName || 'Partner Store'}
+          </Text>
+          <Text style={styles.storeType}>
             {vendor?.storeType === 'HOME_CHEF'
               ? '👩‍🍳 Fresh Home Food & Meals'
               : vendor?.storeType === 'FARMER'
               ? '🌾 Direct Farm Harvest'
               : '🏪 Neighbourhood Kirana & Essentials'}
           </Text>
-          <View style={styles.heroBadgesRow}>
-            {vendor?.rating && typeof vendor?.rating === 'number' && vendor.rating > 0 && (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0) ? (
+
+          <View style={styles.badgesRow}>
+            {hasRealRating ? (
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={12} color="#ffffff" />
                 <Text style={styles.ratingBadgeText}>{Number(vendor.rating).toFixed(1)}</Text>
               </View>
             ) : null}
             {typeof vendor?.avgPrepTimeMins === 'number' && vendor.avgPrepTimeMins > 0 ? (
-              <Text style={styles.heroBadgeText}>⚡ {vendor.avgPrepTimeMins} mins prep</Text>
+              <Text style={styles.badgeText}>⚡ {vendor.avgPrepTimeMins} mins prep</Text>
             ) : null}
             {typeof vendor?.minOrderValue === 'number' && vendor.minOrderValue > 0 ? (
-              <Text style={styles.heroBadgeText}>• Min ₹{vendor.minOrderValue}</Text>
+              <Text style={styles.badgeText}>• Min ₹{vendor.minOrderValue}</Text>
             ) : null}
 
-            {/* Store Open/Closed Badge */}
+            {/* Store Status Pill */}
             <View
               style={[
                 styles.storeStatusBadge,
-                { backgroundColor: isStoreOpen ? '#16a34a' : '#ef4444' }
+                { backgroundColor: isStoreOpen ? '#dcfce7' : '#fee2e2' }
               ]}
             >
-              <Text style={styles.storeStatusBadgeText}>
-                {isStoreOpen ? '● ONLINE' : '● CLOSED'}
+              <Text
+                style={[
+                  styles.storeStatusBadgeText,
+                  { color: isStoreOpen ? '#15803d' : '#b91c1c' }
+                ]}
+              >
+                {isStoreOpen ? '● OPEN' : '● CLOSED'}
               </Text>
             </View>
           </View>
         </View>
-      </View>
 
-      {/* Closed Warning Banner */}
-      {!isStoreOpen && (
-        <View style={styles.closedBanner}>
-          <Ionicons name="alert-circle" size={20} color="#b91c1c" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.closedBannerTitle}>STORE CURRENTLY CLOSED</Text>
-            <Text style={styles.closedBannerText}>
-              Browsing is enabled, but ordering is paused. You can view all items and prices below.
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Subcategory Filter Tabs */}
-      {subCategories.length > 1 && (
-        <View style={styles.tabContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
-            {subCategories.map((cat) => {
-              const isSelected = selectedSubCat === cat;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.tabChip, isSelected && styles.tabChipSelected]}
-                  onPress={() => setSelectedSubCat(cat)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.tabText, isSelected && styles.tabTextSelected]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Products List */}
-      {/* Deep-link / Direct-to-store warning banner */}
-      {currentCartVendorId && vendor?._id && currentCartVendorId.toString() !== vendor._id.toString() && items.length > 0 && (
-        <View style={styles.storeMismatchBanner}>
-          <Ionicons name="information-circle" size={20} color="#b45309" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.storeMismatchTitle}>
-              Aap abhi {currentCartVendorName || 'dusre store'} se shopping kar rahe hain
-            </Text>
-            <Text style={styles.storeMismatchSub}>
-              Is store se add karne par purana cart replace ho jayega.
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.switchStoreBtn}
-            onPress={clearEntireCart}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.switchStoreBtnText}>Switch</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {isLoading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading menu & produce...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: billSummary.totalCount > 0 ? Math.max(90, insets.bottom + 80) : Math.max(30, insets.bottom + 24) }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {productError ? (
-            <TouchableOpacity onPress={() => fetchProducts(targetVendorId || vendor?._id)}>
-              <Text style={{ color: '#b91c1c', padding: 16 }}>{productError} Tap to retry.</Text>
-            </TouchableOpacity>
-          ) : null}
-          {filteredProducts.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="fast-food-outline" size={44} color="#94a3b8" />
-              <Text style={styles.emptyTitle}>{productError ? 'Products temporarily unavailable' : 'No Items in this Section'}</Text>
+        {/* Closed Warning Banner */}
+        {!isStoreOpen && (
+          <View style={styles.closedBanner}>
+            <Ionicons name="alert-circle" size={20} color="#b91c1c" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.closedBannerTitle}>STORE CURRENTLY CLOSED</Text>
+              <Text style={styles.closedBannerText}>
+                Browsing is enabled, but ordering is paused. You can view all items and prices below.
+              </Text>
             </View>
-          ) : (
-            filteredProducts.map((product) => {
+          </View>
+        )}
+
+        {/* Deep-link / Direct-to-store warning banner */}
+        {currentCartVendorId &&
+          vendor?._id &&
+          currentCartVendorId.toString() !== vendor._id.toString() &&
+          items.length > 0 && (
+            <View style={styles.storeMismatchBanner}>
+              <Ionicons name="information-circle" size={20} color="#b45309" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.storeMismatchTitle}>
+                  Aap abhi {currentCartVendorName || 'dusre store'} se shopping kar rahe hain
+                </Text>
+                <Text style={styles.storeMismatchSub}>
+                  Is store se add karne par purana cart replace ho jayega.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.switchStoreBtn}
+                onPress={clearEntireCart}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.switchStoreBtnText}>Switch</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        {/* Subcategory Filter Tabs */}
+        {subCategories.length > 1 && (
+          <View style={styles.tabContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabsRow}
+            >
+              {subCategories.map((cat) => {
+                const isSelected = selectedSubCat === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.tabChip, isSelected && styles.tabChipSelected]}
+                    onPress={() => setSelectedSubCat(cat)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[styles.tabText, isSelected && styles.tabTextSelected]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Products List */}
+        {isLoading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading menu & produce...</Text>
+          </View>
+        ) : productError ? (
+          <TouchableOpacity
+            onPress={() => fetchProducts(targetVendorId || vendor?._id)}
+            style={styles.errorBox}
+          >
+            <Ionicons name="cloud-offline-outline" size={32} color="#b91c1c" />
+            <Text style={styles.errorText}>{productError}</Text>
+            <Text style={styles.retryText}>Tap to retry</Text>
+          </TouchableOpacity>
+        ) : filteredProducts.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Ionicons name="fast-food-outline" size={44} color="#94a3b8" />
+            <Text style={styles.emptyTitle}>No Items in this Section</Text>
+          </View>
+        ) : (
+          <View style={styles.productsContainer}>
+            {filteredProducts.map((product) => {
               const qty = getItemQuantity(product._id);
-              const isOutOfStock = product.inStock === false || (product.stockQty !== undefined && product.stockQty <= 0);
-              const isLowStock = !isOutOfStock && product.stockQty !== undefined && product.stockQty <= 5 && product.stockQty > 0;
-              const isMaxStockReached = !isOutOfStock && product.stockQty !== undefined && qty >= product.stockQty;
+              const isOutOfStock =
+                product.inStock === false ||
+                (product.stockQty !== undefined && product.stockQty <= 0);
+              const isLowStock =
+                !isOutOfStock &&
+                product.stockQty !== undefined &&
+                product.stockQty <= 5 &&
+                product.stockQty > 0;
+              const isMaxStockReached =
+                !isOutOfStock &&
+                product.stockQty !== undefined &&
+                qty >= product.stockQty;
               const isFood = isPreparedFoodProduct({ ...product, vendor });
               const resizeMode = isFood ? 'cover' : 'contain';
 
               return (
-                <TouchableOpacity key={product._id} style={[styles.productCard, isOutOfStock && { opacity: 0.82 }]} activeOpacity={0.88} onPress={() => navigation.navigate('ProductDetails', { product: { ...product, vendor } })}>
+                <TouchableOpacity
+                  key={product._id}
+                  style={[styles.productCard, isOutOfStock && { opacity: 0.82 }]}
+                  activeOpacity={0.88}
+                  onPress={() =>
+                    navigation.navigate('ProductDetails', {
+                      product: { ...product, vendor }
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={product.name}
+                >
                   <View style={styles.productMeta}>
                     {/* Veg Indicator */}
                     <View style={styles.vegBox}>
@@ -324,7 +398,9 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                     ) : isLowStock ? (
                       <View style={styles.lowStockRow}>
                         <Ionicons name="flame" size={12} color="#ea580c" />
-                        <Text style={styles.lowStockText}>Only {product.stockQty} left in stock!</Text>
+                        <Text style={styles.lowStockText}>
+                          Only {product.stockQty} left in stock!
+                        </Text>
                       </View>
                     ) : null}
 
@@ -336,12 +412,19 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                   </View>
 
                   <View style={styles.productRight}>
-                    <View style={[styles.prodImgContainer, !isFood && styles.prodImgContainerGrocery]}>
+                    <View
+                      style={[
+                        styles.prodImgContainer,
+                        !isFood && styles.prodImgContainerGrocery
+                      ]}
+                    >
                       <SafeImage
                         source={{ uri: product.image }}
                         style={[styles.prodImg, !isFood && styles.prodImgGrocery]}
                         resizeMode={resizeMode}
-                        placeholderIcon={isFood ? 'restaurant-outline' : 'leaf-outline'}
+                        placeholderIcon={
+                          isFood ? 'restaurant-outline' : 'leaf-outline'
+                        }
                         placeholderIconSize={28}
                       />
                       {isOutOfStock && (
@@ -356,10 +439,18 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                       {!isStoreOpen ? (
                         <TouchableOpacity
                           style={styles.storeClosedBtn}
-                          onPress={(e) => { e?.stopPropagation?.(); handleClosedStoreTap(); }}
+                          onPress={(e) => {
+                            e?.stopPropagation?.();
+                            handleClosedStoreTap();
+                          }}
                           activeOpacity={0.8}
                         >
-                          <Ionicons name="lock-closed" size={10} color="#94a3b8" style={{ marginRight: 3 }} />
+                          <Ionicons
+                            name="lock-closed"
+                            size={10}
+                            color="#94a3b8"
+                            style={{ marginRight: 3 }}
+                          />
                           <Text style={styles.storeClosedBtnText}>CLOSED</Text>
                         </TouchableOpacity>
                       ) : isOutOfStock ? (
@@ -370,16 +461,25 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                         <View style={styles.stepperBox}>
                           <TouchableOpacity
                             style={styles.stepperBtn}
-                            onPress={(e) => { e?.stopPropagation?.(); updateQuantity(product._id, -1); }}
+                            onPress={(e) => {
+                              e?.stopPropagation?.();
+                              updateQuantity(product._id, -1);
+                            }}
                           >
                             <Text style={styles.stepperBtnText}>−</Text>
                           </TouchableOpacity>
                           <Text style={styles.stepperQty}>{qty}</Text>
                           <TouchableOpacity
-                            style={[styles.stepperBtn, isMaxStockReached && { opacity: 0.35 }]}
+                            style={[
+                              styles.stepperBtn,
+                              isMaxStockReached && { opacity: 0.35 }
+                            ]}
                             onPress={() => {
                               if (isMaxStockReached) {
-                                showAlert('Stock Limit', `Only ${product.stockQty} unit(s) available in stock.`);
+                                showAlert(
+                                  'Stock Limit',
+                                  `Only ${product.stockQty} unit(s) available in stock.`
+                                );
                                 return;
                               }
                               updateQuantity(product._id, 1);
@@ -391,7 +491,10 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                       ) : (
                         <TouchableOpacity
                           style={styles.addBtn}
-                          onPress={(e) => { e?.stopPropagation?.(); addToCart({ ...product, vendor }); }}
+                          onPress={(e) => {
+                            e?.stopPropagation?.();
+                            addToCart({ ...product, vendor });
+                          }}
                           activeOpacity={0.85}
                         >
                           <Text style={styles.addBtnText}>ADD</Text>
@@ -402,17 +505,24 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                   </View>
                 </TouchableOpacity>
               );
-            })
-          )}
-        </ScrollView>
-      )}
+            })}
+          </View>
+        )}
+      </ScrollView>
 
       {/* Sticky Bottom Cart Bar */}
       {billSummary.totalCount > 0 && (
-        <View style={[styles.stickyCartBar, { bottom: Math.max(16, insets.bottom + 12) }]}>
+        <View
+          style={[
+            styles.stickyCartBar,
+            { bottom: Math.max(16, insets.bottom + 12) }
+          ]}
+        >
           <View>
             <Text style={styles.cartCountText}>{billSummary.totalCount} ITEM(S)</Text>
-            <Text style={styles.cartTotalText}>₹{billSummary.grandTotal ?? billSummary.total ?? 0}</Text>
+            <Text style={styles.cartTotalText}>
+              ₹{billSummary.grandTotal ?? billSummary.total ?? 0}
+            </Text>
           </View>
           {isStoreOpen ? (
             <TouchableOpacity
@@ -454,14 +564,137 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc'
   },
+  backButtonCircle: {
+    position: 'absolute',
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
+    elevation: 6
+  },
+  scrollContent: {
+    paddingBottom: 30
+  },
+  heroBanner: {
+    width: '100%',
+    height: 160,
+    maxHeight: 180,
+    backgroundColor: '#0f172a',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  heroImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover'
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.25)'
+  },
+  storeCard: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginTop: -24,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: 'rgba(15, 23, 42, 0.08)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 3
+  },
+  storeName: {
+    color: '#0f172a',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2
+  },
+  storeType: {
+    color: '#16a34a',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 3,
+    marginBottom: 8
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    gap: 3
+  },
+  ratingBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  badgeText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500'
+  },
+  storeStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  storeStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3
+  },
+  closedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fca5a5'
+  },
+  closedBannerTitle: {
+    color: '#991b1b',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4
+  },
+  closedBannerText: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+    lineHeight: 16
+  },
   storeMismatchBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#fef3c7',
-    borderBottomWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
     borderBottomColor: '#fde68a',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10
   },
   storeMismatchTitle: {
@@ -485,127 +718,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700'
   },
-  heroBanner: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    minHeight: 180,
-    position: 'relative',
-    justifyContent: 'flex-end',
-    padding: 16
-  },
-  heroImg: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover'
-  },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)'
-  },
-  backButtonCircle: {
-    position: 'absolute',
-    top: Platform.OS === 'web' ? 16 : 44,
-    left: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10
-  },
-  heroTextContainer: {
-    zIndex: 5
-  },
-  heroStoreName: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '800'
-  },
-  heroStoreType: {
-    color: '#86efac',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 2
-  },
-  heroBadgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6
-  },
-  ratingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16a34a',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 3
-  },
-  ratingBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800'
-  },
-  heroBadgeText: {
-    color: '#e2e8f0',
-    fontSize: 12,
-    fontWeight: '500'
-  },
-  storeStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6
-  },
-  storeStatusBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.3
-  },
-  closedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#fca5a5'
-  },
-  closedBannerTitle: {
-    color: '#991b1b',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4
-  },
-  closedBannerText: {
-    color: '#b91c1c',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 1,
-    lineHeight: 16
-  },
   tabContainer: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0'
+    marginTop: 12,
+    backgroundColor: '#f8fafc'
   },
   tabsRow: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 6,
     gap: 8
   },
   tabChip: {
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9'
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   },
   tabChipSelected: {
-    backgroundColor: colors.primary
+    backgroundColor: colors.primary,
+    borderColor: colors.primary
   },
   tabText: {
     fontSize: 13,
@@ -617,7 +749,7 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   loadingBox: {
-    flex: 1,
+    padding: 40,
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -626,31 +758,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b'
   },
-  scrollContent: {
-    padding: 16,
-    gap: 14
+  errorBox: {
+    alignItems: 'center',
+    padding: 32,
+    marginHorizontal: 16,
+    marginTop: 16,
+    backgroundColor: '#fef2f2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fca5a5'
+  },
+  errorText: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center'
+  },
+  retryText: {
+    color: '#15803d',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6
   },
   emptyBox: {
     alignItems: 'center',
     padding: 40
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#64748b',
     marginTop: 10
   },
+  productsContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 12
+  },
   productCard: {
     flexDirection: 'row',
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     shadowColor: 'rgba(15, 23, 42, 0.04)',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
-    shadowRadius: 10,
+    shadowRadius: 6,
     elevation: 2
   },
   productMeta: {
@@ -674,7 +830,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#16a34a'
   },
   productName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0f172a'
   },
@@ -706,31 +862,39 @@ const styles = StyleSheet.create({
   },
   productRight: {
     alignItems: 'center',
-    width: 110
+    width: 104
+  },
+  prodImgContainer: {
+    position: 'relative',
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9'
+  },
+  prodImgContainerGrocery: {
+    backgroundColor: '#f8fafc',
+    padding: 2
   },
   prodImg: {
-    width: 100,
-    height: 90,
-    borderRadius: 14,
-    resizeMode: 'cover'
+    width: 96,
+    height: 88,
+    borderRadius: 12
   },
-  prodImgPlaceholder: {
-    width: 100,
-    height: 90,
-    borderRadius: 14,
-    backgroundColor: '#f1f5f9',
-    justifyContent: 'center',
-    alignItems: 'center'
+  prodImgGrocery: {
+    width: 92,
+    height: 84,
+    borderRadius: 10
   },
   actionWrap: {
-    marginTop: -16
+    marginTop: -14
   },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 20,
-    paddingVertical: 7,
+    paddingHorizontal: 18,
+    paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#16a34a',
@@ -755,14 +919,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#cbd5e1'
   },
   storeClosedBtnText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#64748b',
     letterSpacing: 0.3
@@ -774,7 +938,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 5,
-    gap: 10,
+    gap: 8,
     shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -782,16 +946,16 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   stepperBtn: {
-    paddingHorizontal: 6
+    paddingHorizontal: 5
   },
   stepperBtnText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800'
   },
   stepperQty: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800'
   },
   soldOutMetaBadge: {
@@ -826,11 +990,6 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700'
   },
-  prodImgContainer: {
-    position: 'relative',
-    borderRadius: 14,
-    overflow: 'hidden'
-  },
   soldOutImageOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(15, 23, 42, 0.62)',
@@ -854,12 +1013,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1.2,
     borderColor: '#fca5a5',
-    alignItems: 'center',
-    shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1
+    alignItems: 'center'
   },
   outOfStockText: {
     fontSize: 10,
@@ -869,7 +1023,6 @@ const styles = StyleSheet.create({
   },
   stickyCartBar: {
     position: 'absolute',
-    bottom: 16,
     left: 16,
     right: 16,
     backgroundColor: '#15803d',

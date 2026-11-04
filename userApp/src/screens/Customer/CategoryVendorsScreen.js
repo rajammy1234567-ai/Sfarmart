@@ -10,12 +10,14 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { colors } from '../../theme/colors';
-import { SafeImage, isValidImageUri } from '../../components/common/SafeImage';
+import { SafeImage } from '../../components/common/SafeImage';
 
 export const CategoryVendorsScreen = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const category = route.params?.category || { name: 'Stores', slug: 'fruits-vegetables' };
   const [vendors, setVendors] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,24 +61,36 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleBrowseAllStores = () => {
+    // Clear category filter and open real store list on Home
+    navigation.navigate('MainTabs', {
+      screen: 'Home',
+      params: { selectedCategory: 'all' }
+    });
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Header with Safe Area clearance */}
+      <View style={[styles.header, { paddingTop: Math.max(14, insets.top + 6) }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={22} color="#0f172a" />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>{category.name}</Text>
-          <Text style={styles.headerSub}>
+          <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
+            {category?.name || 'Stores'}
+          </Text>
+          <Text style={styles.headerSub} numberOfLines={1} ellipsizeMode="tail">
             {isLoading
-              ? 'Finding local stores & farmers...'
+              ? 'Finding local stores...'
               : isConfiguredOnly
               ? 'Category overview'
               : `${vendors.length} ${vendors.length === 1 ? 'store' : 'stores'} available`}
@@ -91,7 +105,9 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
         </View>
       ) : errorState === 'NETWORK_ERROR' ? (
         <View style={styles.emptyBox}>
-          <Ionicons name="cloud-offline-outline" size={48} color="#ef4444" />
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="cloud-offline-outline" size={32} color="#ef4444" />
+          </View>
           <Text style={styles.emptyTitle}>Connection Error</Text>
           <Text style={styles.emptySub}>
             Unable to connect to service. Please check your internet connection and retry.
@@ -100,6 +116,8 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
             style={styles.retryBtn}
             onPress={fetchVendors}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Retry Connection"
           >
             <Ionicons name="reload-outline" size={16} color="#ffffff" />
             <Text style={styles.retryBtnText}>Retry Connection</Text>
@@ -109,29 +127,38 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            billSummary.totalCount > 0 && { paddingBottom: 100 }
+            {
+              paddingBottom:
+                billSummary.totalCount > 0
+                  ? Math.max(100, insets.bottom + 80)
+                  : Math.max(24, insets.bottom + 16)
+            }
           ]}
           showsVerticalScrollIndicator={false}
         >
           {vendors.length === 0 ? (
             <View style={styles.emptyBox}>
-              <Ionicons
-                name={isConfiguredOnly ? 'time-outline' : 'storefront-outline'}
-                size={48}
-                color="#94a3b8"
-              />
+              <View style={styles.emptyIconCircle}>
+                <Ionicons
+                  name={isConfiguredOnly ? 'time-outline' : 'storefront-outline'}
+                  size={32}
+                  color="#94a3b8"
+                />
+              </View>
               <Text style={styles.emptyTitle}>
-                {isConfiguredOnly ? 'Category Coming Soon' : 'No Stores Available'}
+                {isConfiguredOnly ? 'Category Coming Soon' : 'No stores in this category'}
               </Text>
               <Text style={styles.emptySub}>
                 {isConfiguredOnly
-                  ? `We are currently onboarding verified local partners and farm stores for ${category.name}. Check back soon!`
-                  : `No partners in your delivery zone currently offer items in ${category.name}.`}
+                  ? `We are onboarding verified partners for ${category.name}. Check back soon!`
+                  : `Currently there are no partner stores listed under ${category.name}.`}
               </Text>
               <TouchableOpacity
                 style={styles.browseCatalogBtn}
-                onPress={() => navigation.navigate('Catalog')}
+                onPress={handleBrowseAllStores}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Browse All Stores"
               >
                 <Text style={styles.browseCatalogBtnText}>Browse All Stores</Text>
               </TouchableOpacity>
@@ -139,18 +166,25 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
           ) : (
             vendors.map((vendor) => {
               const isOpen = vendor.isOpen !== false;
+              const hasRating = Boolean(
+                vendor.rating &&
+                typeof vendor.rating === 'number' &&
+                vendor.rating > 0 &&
+                (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0)
+              );
+
               return (
                 <TouchableOpacity
                   key={vendor._id}
                   style={[styles.vendorCard, !isOpen && styles.vendorCardClosed]}
                   onPress={() => navigation.navigate('VendorStore', { vendor })}
                   activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel={vendor.storeName}
                 >
                   <View style={styles.bannerContainer}>
                     <SafeImage
-                      source={{
-                        uri: isValidImageUri(vendor.banner) ? vendor.banner : null
-                      }}
+                      source={{ uri: vendor.banner }}
                       style={styles.bannerImg}
                       placeholderIcon="storefront-outline"
                       placeholderIconSize={36}
@@ -170,9 +204,9 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
                   <View style={styles.vendorInfo}>
                     <View style={styles.titleRow}>
                       <Text style={styles.storeName}>{vendor.storeName}</Text>
-                      {vendor.rating && typeof vendor.rating === 'number' && vendor.rating > 0 && (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0) ? (
+                      {hasRating ? (
                         <View style={styles.ratingBox}>
-                          <Ionicons name="star" size={13} color="#ffffff" />
+                          <Ionicons name="star" size={12} color="#ffffff" />
                           <Text style={styles.ratingText}>{Number(vendor.rating).toFixed(1)}</Text>
                         </View>
                       ) : null}
@@ -219,7 +253,7 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
 
       {/* Sticky Bottom Cart Bar */}
       {billSummary.totalCount > 0 && (
-        <View style={styles.stickyCartBar}>
+        <View style={[styles.stickyCartBar, { bottom: Math.max(16, insets.bottom + 12) }]}>
           <View>
             <Text style={styles.cartCountText}>{billSummary.totalCount} ITEM(S)</Text>
             <Text style={styles.cartTotalText}>₹{billSummary.grandTotal ?? billSummary.total ?? 0}</Text>
@@ -247,7 +281,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 14,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
@@ -261,7 +295,9 @@ const styles = StyleSheet.create({
     marginRight: 8
   },
   headerTitleWrap: {
-    flex: 1
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center'
   },
   headerTitle: {
     fontSize: 17,
@@ -270,7 +306,8 @@ const styles = StyleSheet.create({
   },
   headerSub: {
     fontSize: 12,
-    color: '#64748b'
+    color: '#64748b',
+    marginTop: 1
   },
   loadingBox: {
     flex: 1,
@@ -289,21 +326,30 @@ const styles = StyleSheet.create({
   },
   emptyBox: {
     alignItems: 'center',
-    padding: 40
+    paddingVertical: 32,
+    paddingHorizontal: 20
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#0f172a',
-    marginTop: 12
+    color: '#0f172a'
   },
   emptySub: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748b',
     marginTop: 4,
     textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 280
+    lineHeight: 17,
+    maxWidth: 260
   },
   retryBtn: {
     flexDirection: 'row',
@@ -322,10 +368,10 @@ const styles = StyleSheet.create({
   },
   browseCatalogBtn: {
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
-    marginTop: 18,
+    marginTop: 16,
     borderWidth: 1,
     borderColor: '#cbd5e1'
   },
