@@ -166,11 +166,11 @@ export const ProfileWalletScreen = ({ navigation }) => {
 
             <TouchableOpacity
               style={styles.guestLoginBtn}
-              onPress={() => requireLogin({ type: 'WALLET' })}
+              onPress={() => navigation.navigate('Login')}
               activeOpacity={0.85}
             >
-              <Text style={styles.guestLoginBtnText}>Phone / OTP Se Log In Karein</Text>
-              <Ionicons name="arrow-forward" size={16} color="#15803d" />
+              <Text style={styles.guestLoginBtnText}>Log In with Password</Text>
+              <Ionicons name="log-in-outline" size={16} color="#15803d" />
             </TouchableOpacity>
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, width: '100%' }}>

@@ -346,7 +346,13 @@ export const apiService = {
     try {
       const url = type ? `/categories?home=true&type=${type}` : '/categories?home=true';
       const response = await apiClient.get(url);
-      return response.data;
+      if (response.data && response.data.success && Array.isArray(response.data.categories) && response.data.categories.length > 0) {
+        return response.data;
+      }
+      // If home-visibility filtered query returns empty array from server, retrieve active catalog categories
+      const fallbackUrl = type ? `/categories?partner=true&type=${type}` : '/categories?partner=true';
+      const fallbackResponse = await apiClient.get(fallbackUrl);
+      return fallbackResponse.data;
     } catch (error) {
       console.warn('Failed to fetch home categories:', error.message);
       return {
@@ -372,7 +378,12 @@ export const apiService = {
         if (qs) url = `/categories?${qs}`;
       }
       const response = await apiClient.get(url);
-      return response.data;
+      if (response.data && response.data.success && Array.isArray(response.data.categories) && response.data.categories.length > 0) {
+        return response.data;
+      }
+      // Fallback to partner=true if standard categories endpoint returns empty
+      const fallbackResponse = await apiClient.get('/categories?partner=true');
+      return fallbackResponse.data;
     } catch (error) {
       console.warn('Failed to fetch categories:', error.message);
       return {

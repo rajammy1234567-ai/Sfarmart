@@ -34,6 +34,8 @@ export const HomeScreen = ({ navigation }) => {
   const [vendors, setVendors] = useState([]);
   const [products, setProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('default');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiError, setApiError] = useState(null);
@@ -210,6 +212,22 @@ export const HomeScreen = ({ navigation }) => {
     );
   });
 
+  // Filter products by selected category and apply real price sorting
+  const displayedProducts = availableProducts
+    .filter((p) => {
+      if (selectedCategory === 'all') return true;
+      const catSlug = (p.category?.slug || p.category?.canonicalSlug || '').toLowerCase();
+      const catId = (p.category?._id || p.category?.id || p.category || '').toString();
+      const catKey = (p.category?.key || '').toLowerCase();
+      const target = selectedCategory.toLowerCase();
+      return catSlug === target || catId === target || catKey === target || catSlug.includes(target);
+    })
+    .sort((a, b) => {
+      if (sortBy === 'price_low') return Number(a.price || 0) - Number(b.price || 0);
+      if (sortBy === 'price_high') return Number(b.price || 0) - Number(a.price || 0);
+      return 0;
+    });
+
   // Segregate by merchant type
   const kiranaStores = filteredVendors.filter((v) => v.storeType === 'KIRANA' || v.storeType === 'STORE');
   const homeChefs = filteredVendors.filter((v) => v.storeType === 'HOME_CHEF');
@@ -258,6 +276,105 @@ export const HomeScreen = ({ navigation }) => {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Horizontal Category Navigation Tabs Bar */}
+        {!isSearching && filteredCategories.length > 0 && (
+          <View style={styles.categoryTabsWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryTabsContent}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.categoryTabChip,
+                  selectedCategory === 'all' && styles.categoryTabChipActive
+                ]}
+                onPress={() => setSelectedCategory('all')}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="All categories"
+              >
+                <Ionicons
+                  name="grid-outline"
+                  size={13}
+                  color={selectedCategory === 'all' ? '#ffffff' : '#16a34a'}
+                  style={{ marginRight: 4 }}
+                />
+                <Text
+                  style={[
+                    styles.categoryTabChipText,
+                    selectedCategory === 'all' && styles.categoryTabChipTextActive
+                  ]}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+
+              {filteredCategories.map((cat, idx) => {
+                const catIdentifier = cat.slug || cat._id || cat.key || String(idx);
+                const isSelected = selectedCategory === catIdentifier || selectedCategory === cat.slug;
+                return (
+                  <TouchableOpacity
+                    key={String(cat._id || cat.slug || idx)}
+                    style={[
+                      styles.categoryTabChip,
+                      isSelected && styles.categoryTabChipActive
+                    ]}
+                    onPress={() => {
+                      setSelectedCategory(isSelected ? 'all' : (cat.slug || catIdentifier));
+                    }}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${cat.name} category`}
+                  >
+                    {cat.vectorIcon ? (
+                      <Ionicons
+                        name={cat.vectorIcon}
+                        size={13}
+                        color={isSelected ? '#ffffff' : (cat.accentColor || '#16a34a')}
+                        style={{ marginRight: 4 }}
+                      />
+                    ) : (
+                      <Text style={{ fontSize: 12, marginRight: 4 }}>{cat.icon || '🥦'}</Text>
+                    )}
+                    <Text
+                      style={[
+                        styles.categoryTabChipText,
+                        isSelected && styles.categoryTabChipTextActive
+                      ]}
+                    >
+                      {cat.shortName || cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Active Category Filter Tag Banner */}
+        {!isSearching && selectedCategory !== 'all' && (
+          <View style={styles.filterActiveBar}>
+            <View style={styles.filterActiveInfo}>
+              <Ionicons name="funnel" size={12} color="#15803d" />
+              <Text style={styles.filterActiveText}>
+                Filtered: {
+                  categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name ||
+                  selectedCategory
+                } ({displayedProducts.length} product{displayedProducts.length === 1 ? '' : 's'})
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setSelectedCategory('all')}
+              style={styles.filterClearBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={13} color="#b91c1c" />
+              <Text style={styles.filterClearText}>Reset</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Retryable Error Banner on API Failure */}
         {apiError && (
@@ -423,7 +540,15 @@ export const HomeScreen = ({ navigation }) => {
                           cat.borderColor ? { borderColor: cat.borderColor, borderWidth: 1 } : null
                         ]}
                       >
-                        {cat.vectorIcon ? (
+                        {isValidImageUri(cat.image) ? (
+                          <SafeImage
+                            source={{ uri: cat.image }}
+                            style={styles.catImage}
+                            resizeMode="cover"
+                            placeholderIcon={cat.vectorIcon || 'leaf-outline'}
+                            placeholderIconSize={20}
+                          />
+                        ) : cat.vectorIcon ? (
                           <Ionicons
                             name={cat.vectorIcon}
                             size={22}
@@ -618,25 +743,64 @@ export const HomeScreen = ({ navigation }) => {
                   <Text style={styles.sectionHeading}>Store products</Text>
                   <Text style={styles.sectionSubHeading}>Direct from local store inventory</Text>
                 </View>
-                {availableProducts.length > 0 && (
-                  <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
-                    <Text style={styles.seeAllText}>View All ({availableProducts.length}) →</Text>
-                  </TouchableOpacity>
-                )}
+                <View style={styles.sectionHeaderRight}>
+                  {availableProducts.length > 1 && (
+                    <View style={styles.sortPillGroup}>
+                      <TouchableOpacity
+                        style={[styles.sortPill, sortBy === 'price_low' && styles.sortPillActive]}
+                        onPress={() => setSortBy(sortBy === 'price_low' ? 'default' : 'price_low')}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Sort by price low to high"
+                      >
+                        <Text style={[styles.sortPillText, sortBy === 'price_low' && styles.sortPillTextActive]}>₹ Low</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.sortPill, sortBy === 'price_high' && styles.sortPillActive]}
+                        onPress={() => setSortBy(sortBy === 'price_high' ? 'default' : 'price_high')}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Sort by price high to low"
+                      >
+                        <Text style={[styles.sortPillText, sortBy === 'price_high' && styles.sortPillTextActive]}>₹ High</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {availableProducts.length > 0 && (
+                    <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
+                      <Text style={styles.seeAllText}>View All ({availableProducts.length}) →</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
-              {availableProducts.length === 0 ? (
+              {displayedProducts.length === 0 ? (
                 <View style={styles.honestEmptyBox}>
                   <Ionicons name="cart-outline" size={36} color="#94a3b8" />
-                  <Text style={styles.honestEmptyTitle}>No products currently listed</Text>
-                  <Text style={styles.honestEmptySub}>Products from active stores will be displayed here.</Text>
+                  <Text style={styles.honestEmptyTitle}>
+                    {selectedCategory !== 'all' ? 'No products in this category' : 'No products currently listed'}
+                  </Text>
+                  <Text style={styles.honestEmptySub}>
+                    {selectedCategory !== 'all'
+                      ? 'Try switching to another category or tap All to view all store products.'
+                      : 'Products from active stores will be displayed here.'}
+                  </Text>
+                  {selectedCategory !== 'all' && (
+                    <TouchableOpacity
+                      style={styles.filterResetInlineBtn}
+                      onPress={() => setSelectedCategory('all')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.filterResetInlineBtnText}>Show All Products</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
                 <View style={styles.productsGrid}>
-                  {availableProducts.slice(0, 6).map((product) => (
+                  {displayedProducts.slice(0, 8).map((product) => (
                     <View
                       key={product._id}
-                      style={availableProducts.length === 1 ? styles.singleProductCol : styles.productCol}
+                      style={displayedProducts.length === 1 ? styles.singleProductCol : styles.productCol}
                     >
                       <ProductCard
                         product={product}
@@ -829,6 +993,134 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     padding: 0,
     minHeight: 24
+  },
+  categoryTabsWrapper: {
+    marginVertical: 4,
+    paddingHorizontal: 0
+  },
+  categoryTabsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  categoryTabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: 'rgba(15, 23, 42, 0.04)',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 1,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  categoryTabChipActive: {
+    backgroundColor: '#16a34a',
+    borderColor: '#15803d',
+    shadowColor: '#16a34a',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  categoryTabChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155'
+  },
+  categoryTabChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '800'
+  },
+  filterActiveBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#dcfce7',
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bbf7d0'
+  },
+  filterActiveInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1
+  },
+  filterActiveText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#15803d',
+    flex: 1
+  },
+  filterClearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  filterClearText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#b91c1c'
+  },
+  filterResetInlineBtn: {
+    marginTop: 10,
+    alignSelf: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8
+  },
+  filterResetInlineBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff'
+  },
+  catImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22
+  },
+  sectionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  sortPillGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    padding: 2
+  },
+  sortPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10
+  },
+  sortPillActive: {
+    backgroundColor: '#16a34a'
+  },
+  sortPillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748b'
+  },
+  sortPillTextActive: {
+    color: '#ffffff'
   },
   promoCardWrapper: {
     marginHorizontal: 16,

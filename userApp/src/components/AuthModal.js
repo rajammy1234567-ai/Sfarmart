@@ -14,6 +14,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { useApp } from '../context/AppContext';
@@ -31,6 +32,7 @@ export const AuthModal = ({
   onSuccess
 }) => {
   const { loginUser } = useApp();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState('PHONE'); // 'PHONE' | 'OTP'
   const [phone, setPhone] = useState('');
@@ -200,6 +202,29 @@ export const AuthModal = ({
                   </View>
                 )}
               </TactileButton>
+
+              <View style={styles.authDividerRow}>
+                <View style={styles.authDividerLine} />
+                <Text style={styles.authDividerText}>YA PHIR</Text>
+                <View style={styles.authDividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.passwordLoginAltBtn}
+                onPress={() => {
+                  handleDismiss();
+                  if (onClose) onClose();
+                  try {
+                    navigation.navigate('Login', { initialPhone: phone.trim() });
+                  } catch (e) {
+                    console.warn('Navigation error:', e);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="key-outline" size={16} color="#16a34a" />
+                <Text style={styles.passwordLoginAltBtnText}>Password Se Login Karein</Text>
+              </TouchableOpacity>
 
             </View>
           ) : (
@@ -470,6 +495,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.primary,
     fontWeight: '600'
+  },
+  authDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10
+  },
+  authDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0'
+  },
+  authDividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.5
+  },
+  passwordLoginAltBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#86efac',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 4
+  },
+  passwordLoginAltBtnText: {
+    color: '#16a34a',
+    fontSize: 14,
+    fontWeight: '700'
   }
 });
 
