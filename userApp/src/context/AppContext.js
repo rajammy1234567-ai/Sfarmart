@@ -184,7 +184,11 @@ export const AppProvider = ({ children }) => {
         setIsAuthenticated(true);
         return res.user;
       }
-      throw new Error(res?.message || 'Login failed. Please check your credentials.');
+      const loginError = new Error(res?.message || 'Login failed. Please check your credentials.');
+      loginError.code = res?.code;
+      loginError.status = res?.status;
+      loginError.isNetworkError = res?.isNetworkError;
+      throw loginError;
     } catch (e) {
       console.warn('Customer login API error:', e?.message);
       throw e;

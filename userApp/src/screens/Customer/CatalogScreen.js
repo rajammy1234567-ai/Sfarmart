@@ -64,6 +64,7 @@ export const CatalogScreen = ({ navigation }) => {
   };
 
   const filteredProducts = products.filter((p) => {
+    if (p.vendor?.isActive === false) return false;
     const matchesCat = selectedCat === 'all' || p.category === selectedCat || p.category?._id === selectedCat || p.category?.slug === selectedCat;
     const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
@@ -118,6 +119,7 @@ export const CatalogScreen = ({ navigation }) => {
         </View>
       ) : (
         <FlatList
+          style={styles.flatList}
           data={filteredProducts}
           keyExtractor={(item) => item._id || item.id}
           numColumns={2}
@@ -194,6 +196,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary
+  },
+  flatList: {
+    flex: 1
   },
   listContainer: {
     paddingHorizontal: 16

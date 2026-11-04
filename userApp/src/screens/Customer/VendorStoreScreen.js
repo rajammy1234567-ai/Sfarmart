@@ -180,7 +180,7 @@ export const VendorStoreScreen = ({ route, navigation }) => {
               : '🌾 Direct Farm Harvest'}
           </Text>
           <View style={styles.heroBadgesRow}>
-            {vendor?.rating && typeof vendor?.rating === 'number' && vendor.rating > 0 ? (
+            {vendor?.rating && typeof vendor?.rating === 'number' && vendor.rating > 0 && (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0) ? (
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={12} color="#ffffff" />
                 <Text style={styles.ratingBadgeText}>{Number(vendor.rating).toFixed(1)}</Text>

@@ -45,7 +45,7 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
         setErrorState('NETWORK_ERROR');
         setVendors([]);
       } else if (res.success && Array.isArray(res.vendors)) {
-        setVendors(res.vendors);
+        setVendors(res.vendors.filter(v => v.isActive !== false));
       } else {
         // Genuinely empty category or not found in DB - honest empty state, do NOT show unrelated stores
         setVendors([]);
@@ -170,7 +170,7 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
                   <View style={styles.vendorInfo}>
                     <View style={styles.titleRow}>
                       <Text style={styles.storeName}>{vendor.storeName}</Text>
-                      {vendor.rating && typeof vendor.rating === 'number' && vendor.rating > 0 ? (
+                      {vendor.rating && typeof vendor.rating === 'number' && vendor.rating > 0 && (vendor.numReviews > 0 || vendor.ratingCount > 0 || vendor.reviewsCount > 0) ? (
                         <View style={styles.ratingBox}>
                           <Ionicons name="star" size={13} color="#ffffff" />
                           <Text style={styles.ratingText}>{Number(vendor.rating).toFixed(1)}</Text>
@@ -192,7 +192,7 @@ export const CategoryVendorsScreen = ({ route, navigation }) => {
 
                     <View style={styles.metaRow}>
                       <Text style={styles.metaItem}>
-                        📍 {vendor.address?.city || 'Ludhiana'} ({vendor.deliveryRadiusKm || 7} km radius)
+                        {vendor.address?.city ? `📍 ${vendor.address.city} ` : ''}({vendor.deliveryRadiusKm || 7} km radius)
                       </Text>
                       <Text style={styles.dotSeparator}>•</Text>
                       <Text style={styles.metaItem}>Min ₹{vendor.minOrderValue || 99}</Text>

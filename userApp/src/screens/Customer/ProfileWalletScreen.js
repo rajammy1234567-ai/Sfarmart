@@ -173,14 +173,25 @@ export const ProfileWalletScreen = ({ navigation }) => {
               <Ionicons name="arrow-forward" size={16} color="#15803d" />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.guestLoginBtn, { backgroundColor: '#f0fdf4', borderColor: '#86efac', marginTop: 10 }]}
-              onPress={() => navigation.navigate('Login')}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.guestLoginBtnText, { color: '#16a34a', fontWeight: '700' }]}>Password Login / Naya Account</Text>
-              <Ionicons name="person-add-outline" size={16} color="#16a34a" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, width: '100%' }}>
+              <TouchableOpacity
+                style={[styles.guestLoginBtn, { flex: 1, marginTop: 0, backgroundColor: '#f0fdf4', borderColor: '#86efac' }]}
+                onPress={() => navigation.navigate('Login')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.guestLoginBtnText, { color: '#16a34a', fontWeight: '700', fontSize: 13 }]}>Password Login</Text>
+                <Ionicons name="log-in-outline" size={16} color="#16a34a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.guestLoginBtn, { flex: 1, marginTop: 0, backgroundColor: '#eff6ff', borderColor: '#93c5fd' }]}
+                onPress={() => navigation.navigate('Signup')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.guestLoginBtnText, { color: '#2563eb', fontWeight: '700', fontSize: 13 }]}>Naya Account</Text>
+                <Ionicons name="person-add-outline" size={16} color="#2563eb" />
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <>
@@ -197,7 +208,7 @@ export const ProfileWalletScreen = ({ navigation }) => {
                 <View style={styles.hubRow}>
                   <Ionicons name="location" size={12} color={colors.primary} />
                   <Text style={styles.userHub}>
-                    {userProfile?.addresses?.[0]?.line1 || userProfile?.city || 'Ludhiana, Punjab'}
+                    {userProfile?.addresses?.[0]?.line1 || userProfile?.city || (userProfile?.state ? String(userProfile.state) : 'Location not set')}
                   </Text>
                 </View>
               </View>
@@ -256,7 +267,11 @@ export const ProfileWalletScreen = ({ navigation }) => {
           ))}
         </View>
 
-        {/* Security & Sessions Section */}
+        {
+        /* Security & Sessions & Danger Sections (Only for Authenticated Users) */
+        isAuthenticated && (
+          <>
+            {/* Security & Sessions Section */}
         <View style={styles.sectionBox}>
           <Text style={styles.sectionHeader}>SECURITY & SESSIONS</Text>
 
@@ -320,6 +335,9 @@ export const ProfileWalletScreen = ({ navigation }) => {
             )}
           </TouchableOpacity>
         </View>
+          </>
+        )
+      }
 
         <Text style={styles.appVersion}>S-farmart 24 • Version 1.0.0 (Secure JWT Auth)</Text>
       </ScrollView>

@@ -76,8 +76,13 @@ export const ProductCard = ({ product, onPress, compact = false }) => {
   // Saved pack size / unit
   const packSizeText = product.unit || product.packSize || product.packQuantity || null;
 
-  // Real rating (only if numeric and > 0)
-  const hasRealRating = Boolean(product.rating && typeof product.rating === 'number' && product.rating > 0);
+  // Genuine review rating (only if numeric, > 0, and backed by genuine reviews)
+  const hasRealRating = Boolean(
+    product.rating &&
+    typeof product.rating === 'number' &&
+    product.rating > 0 &&
+    (product.numReviews > 0 || product.reviewsCount > 0 || product.ratingCount > 0)
+  );
 
   return (
     <TouchableOpacity

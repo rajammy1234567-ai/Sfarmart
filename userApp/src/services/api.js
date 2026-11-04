@@ -321,10 +321,23 @@ export const apiService = {
         }
         return data;
       }
-      return { success: false, ok: false, message: data?.message || 'Login failed' };
+      return {
+        success: false,
+        ok: false,
+        message: data?.message || 'Login failed',
+        code: data?.code,
+        status: response?.status
+      };
     } catch (error) {
       console.warn('Customer login failed:', error.message);
-      return { success: false, ok: false, message: error.response?.data?.message || error.message || 'Login failed' };
+      return {
+        success: false,
+        ok: false,
+        message: error.response?.data?.message || error.message || 'Login failed',
+        code: error.response?.data?.code || error.code,
+        status: error.response?.status || error.status,
+        isNetworkError: Boolean(error.isNetworkError || !error.response)
+      };
     }
   },
 

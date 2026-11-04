@@ -45,10 +45,10 @@ export const HomeRestroScreen = ({ navigation }) => {
       }
 
       if (vendorRes && vendorRes.success && Array.isArray(vendorRes.vendors)) {
-        const homeChefs = vendorRes.vendors.filter((v) => v.storeType === 'HOME_CHEF' && v.isApproved !== false);
+        const homeChefs = vendorRes.vendors.filter((v) => v.storeType === 'HOME_CHEF' && v.isApproved !== false && v.isActive !== false);
         setChefs(homeChefs);
       } else if (Array.isArray(vendorRes)) {
-        const homeChefs = vendorRes.filter((v) => v.storeType === 'HOME_CHEF' && v.isApproved !== false);
+        const homeChefs = vendorRes.filter((v) => v.storeType === 'HOME_CHEF' && v.isApproved !== false && v.isActive !== false);
         setChefs(homeChefs);
       } else {
         setChefs([]);
@@ -192,8 +192,8 @@ export const HomeRestroScreen = ({ navigation }) => {
         ) : rows.length === 0 ? (
           <View style={styles.emptyCard}>
             <Ionicons name="restaurant-outline" size={44} color={colors.textMuted} />
-            <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>No dishes available right now</Text>
-            <Text style={{ marginTop: 4, fontSize: 12, color: colors.textSecondary }}>Our home chefs are preparing the next batch</Text>
+            <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>No home chefs or dishes available</Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 20 }}>There are currently no registered home chefs or homemade dishes available in your area. Please check back later.</Text>
           </View>
         ) : (
           rows.map((row, idx) => (

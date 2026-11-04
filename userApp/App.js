@@ -118,7 +118,6 @@ function UserAppContainer() {
             <StatusBar barStyle="dark-content" backgroundColor={colors.card} />
             <NavigationContainer
               ref={navRef}
-              key={userProfile?._id || userProfile?.id || 'guest'}
               linking={linking}
               onReady={() => {
                 setNavigationRef(navRef);

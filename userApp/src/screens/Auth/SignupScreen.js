@@ -20,12 +20,18 @@ import { colors } from "../../theme/colors";
 import { useApp } from "../../context/AppContext";
 import { API_BASE_URL } from "../../config/env";
 import { showAlert } from "../../utils/alert";
+import { normalizeIndianPhone, isValidIndianMobile } from "../../utils/phone";
 import storage from "../../services/storage";
 import { setAuthToken } from "../../services/api";
 
-export const SignupScreen = ({ navigation }) => {
+export const SignupScreen = ({ navigation, route }) => {
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(route?.params?.initialPhone || route?.params?.phone || "");
+  React.useEffect(() => {
+    if (route?.params?.initialPhone || route?.params?.phone) {
+      setPhone(route.params.initialPhone || route.params.phone);
+    }
+  }, [route?.params?.initialPhone, route?.params?.phone]);
   const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -39,15 +45,19 @@ export const SignupScreen = ({ navigation }) => {
   const passwordInputRef = useRef(null);
 
   const skipSignup = () => {
-    loginUser({ name: "Guest", phone: "" });
-    navigation.replace("MainTabs");
+    if (navigation && typeof navigation.navigate === 'function') {
+      navigation.navigate("MainTabs");
+    } else if (navigation && typeof navigation.canGoBack === 'function' && navigation.canGoBack()) {
+      navigation.goBack();
+    }
   };
 
   const signupPending = useRef(false);
   const handleSignup = async () => {
     if (signupPending.current) return;
-    if (!name.trim() || !/^\d{10}$/.test(phone.trim()) || !password) {
-      showAlert("Error", "Name, a 10-digit phone number, and password are required.");
+    const normalized = normalizeIndianPhone(phone);
+    if (!name.trim() || !isValidIndianMobile(normalized) || !password) {
+      showAlert("Error", "Please enter your name, a valid 10-digit Indian mobile number, and a password.");
       return;
     }
 
@@ -61,8 +71,8 @@ export const SignupScreen = ({ navigation }) => {
           headers: { "Content-Type": "application/json", Accept: "application/json", "Accept-Encoding": "identity" },
           body: JSON.stringify({
             name: name.trim(),
-            phone: phone.trim(),
-            city: city || 'Ludhiana',
+            phone: normalized,
+            city: city ? city.trim() : 'Ludhiana',
             password,
             role: selectedRole,
           }),
@@ -81,7 +91,7 @@ export const SignupScreen = ({ navigation }) => {
         }
         const signedInUser = data.user
           ? await loginUser(data.user)
-          : await loginUser(phone.trim(), password);
+          : await loginUser(normalized, password);
         if (!signedInUser) throw new Error('Account created. Please sign in from the Log In tab.');
         if (navigation && typeof navigation.navigate === 'function') {
           navigation.navigate("MainTabs");
@@ -91,6 +101,19 @@ export const SignupScreen = ({ navigation }) => {
         showAlert(
           "Welcome to Farmart! 🎉",
           `Hi ${name.trim()}, your account has been created.`
+        );
+      } else if (data?.code === 'USER_ALREADY_EXISTS' || (data?.message && data.message.includes('already registered'))) {
+        Alert.alert(
+          "Account Already Exists",
+          `The mobile number +91 ${normalized} is already registered. Would you like to log in instead?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Log In",
+              style: "default",
+              onPress: () => navigation.navigate("Login", { initialPhone: normalized })
+            }
+          ]
         );
       } else {
         showAlert(
@@ -162,7 +185,7 @@ export const SignupScreen = ({ navigation }) => {
             <View style={styles.tabHeader}>
               <TouchableOpacity
                 style={styles.inactiveTab}
-                onPress={() => navigation.navigate("Login")}
+                onPress={() => navigation.navigate("Login", { initialPhone: normalizeIndianPhone(phone) })}
                 activeOpacity={0.7}
               >
                 <Text style={styles.inactiveTabText}>Log In</Text>
@@ -348,7 +371,7 @@ export const SignupScreen = ({ navigation }) => {
           <View style={styles.footerSection}>
             <Text style={styles.footerText}>Already registered?</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate("Login")}
+              onPress={() => navigation.navigate("Login", { initialPhone: normalizeIndianPhone(phone) })}
               activeOpacity={0.7}
             >
               <Text style={styles.linkText}>Log In</Text>

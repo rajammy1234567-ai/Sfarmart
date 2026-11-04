@@ -198,15 +198,16 @@ export const CheckoutScreen = ({ navigation }) => {
     if (hasValidSavedPin) {
       return { lat: savedAddress.lat, lng: savedAddress.lng };
     }
-    if (vendorDetails?.location?.coordinates?.length === 2) {
-      const vLng = vendorDetails.location.coordinates[0];
-      const vLat = vendorDetails.location.coordinates[1];
+    const vCoords = vendorDetails?.address?.location?.coordinates || vendorDetails?.location?.coordinates;
+    if (Array.isArray(vCoords) && vCoords.length >= 2) {
+      const vLng = Number(vCoords[0]);
+      const vLat = Number(vCoords[1]);
       if (isFiniteCoord(vLat, 90) && isFiniteCoord(vLng, 180)) {
         return { lat: vLat, lng: vLng };
       }
     }
     return { lat: 30.9010, lng: 75.8573 };
-  }, [hasValidSavedPin, savedAddress?.lat, savedAddress?.lng, vendorDetails?.location?.coordinates, isFiniteCoord]);
+  }, [hasValidSavedPin, savedAddress?.lat, savedAddress?.lng, vendorDetails, isFiniteCoord]);
 
   const [mapCenter, setMapCenter] = useState(getInitialMapCenter);
 
@@ -535,10 +536,11 @@ export const CheckoutScreen = ({ navigation }) => {
       return;
     }
 
-    // Serviceability distance check
-    if (vendorDetails?.location?.coordinates?.length === 2) {
-      const vLng = vendorDetails.location.coordinates[0];
-      const vLat = vendorDetails.location.coordinates[1];
+    // Serviceability distance check against saved coordinates
+    const vCoords = vendorDetails?.address?.location?.coordinates || vendorDetails?.location?.coordinates;
+    if (Array.isArray(vCoords) && vCoords.length >= 2) {
+      const vLng = Number(vCoords[0]);
+      const vLat = Number(vCoords[1]);
       const dist = calculateHaversineDistanceKm(vLat, vLng, selectedPin.lat, selectedPin.lng);
       const maxRadius = vendorDetails.deliveryRadiusKm || 7;
       if (dist !== null && dist > maxRadius) {
@@ -610,10 +612,11 @@ export const CheckoutScreen = ({ navigation }) => {
       return;
     }
 
-    // Preserve vendor serviceability range validation
-    if (vendorDetails?.location?.coordinates?.length === 2) {
-      const vLng = vendorDetails.location.coordinates[0];
-      const vLat = vendorDetails.location.coordinates[1];
+    // Preserve vendor serviceability range validation against saved coordinates
+    const vCoordsSubmit = vendorDetails?.address?.location?.coordinates || vendorDetails?.location?.coordinates;
+    if (Array.isArray(vCoordsSubmit) && vCoordsSubmit.length >= 2) {
+      const vLng = Number(vCoordsSubmit[0]);
+      const vLat = Number(vCoordsSubmit[1]);
       const dist = calculateHaversineDistanceKm(vLat, vLng, deliveryAddress.lat, deliveryAddress.lng);
       const maxRadius = vendorDetails.deliveryRadiusKm || 7;
       if (dist !== null && dist > maxRadius) {

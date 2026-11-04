@@ -112,6 +112,7 @@ export const CategoryChip = ({ categories: propCats, selectedCategory, onSelectC
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={styles.scrollView}
       contentContainerStyle={styles.container}
     >
       {displayCategories.map((cat) => {
@@ -131,9 +132,13 @@ export const CategoryChip = ({ categories: propCats, selectedCategory, onSelectC
 };
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flexGrow: 0,
+    height: 54
+  },
   container: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 6,
     gap: 10
   },
   chip: {

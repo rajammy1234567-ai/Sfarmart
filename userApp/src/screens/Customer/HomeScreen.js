@@ -90,6 +90,7 @@ export const HomeScreen = ({ navigation }) => {
   const isSearching = searchQuery.trim().length > 0;
 
   const filteredVendors = vendors.filter((v) => {
+    if (v.isActive === false) return false;
     if (!isSearching) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
@@ -218,7 +219,7 @@ export const HomeScreen = ({ navigation }) => {
                       <View style={styles.vendorListInfo}>
                         <View style={styles.vendorListTopRow}>
                           <Text style={styles.vendorListTitle} numberOfLines={1}>{v.storeName}</Text>
-                          {v.rating && typeof v.rating === 'number' && v.rating > 0 ? (
+                          {v.rating && typeof v.rating === 'number' && v.rating > 0 && (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0) ? (
                             <View style={styles.ratingBadge}>
                               <Ionicons name="star" size={10} color="#ffffff" />
                               <Text style={styles.ratingBadgeText}>{Number(v.rating).toFixed(1)}</Text>
@@ -324,7 +325,7 @@ export const HomeScreen = ({ navigation }) => {
                   <View style={styles.singleStoreWrapper}>
                     {popularStores.map((v) => {
                       const isOpen = v.isOpen !== false;
-                      const hasRating = v.rating && typeof v.rating === 'number' && v.rating > 0;
+                      const hasRating = Boolean(v.rating && typeof v.rating === 'number' && v.rating > 0 && (v.numReviews > 0 || v.ratingCount > 0 || v.reviewsCount > 0));
                       return (
                         <TouchableOpacity
                           key={v._id}

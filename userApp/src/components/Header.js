@@ -131,7 +131,7 @@ export const Header = ({
         setUserProfile({
           ...userProfile,
           address: resolvedAddress,
-          city: geoResult?.city || userProfile.city || "Ludhiana",
+          city: geoResult?.city || userProfile.city || (userProfile?.state ? String(userProfile.state) : ""),
           lat: latitude,
           lng: longitude,
         });

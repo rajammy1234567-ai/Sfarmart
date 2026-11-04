@@ -112,7 +112,7 @@ export const ProductDetailsScreen = ({ route, navigation }) => {
   // Real store / merchant
   const storeName = product.vendor?.storeName || product.vendorName || product.farmer || 'Verified S-farmart Partner';
   const packSizeText = product.unit || product.packSize || product.packQuantity || null;
-  const hasRealRating = Boolean(product.rating && typeof product.rating === 'number' && product.rating > 0);
+  const hasRealRating = Boolean(product.rating && typeof product.rating === 'number' && product.rating > 0 && (product.numReviews > 0 || product.reviewsCount > 0 || product.ratingCount > 0));
 
   const prodVendorId =
     product.vendor?._id ||

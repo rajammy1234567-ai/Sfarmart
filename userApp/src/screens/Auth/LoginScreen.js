@@ -19,12 +19,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../theme/colors";
 import { useApp } from "../../context/AppContext";
 import { showAlert } from "../../utils/alert";
+import { normalizeIndianPhone, isValidIndianMobile } from "../../utils/phone";
 
 const LOGO = require("../../../assets/farmart24_logo.jpg");
 
-export const LoginScreen = ({ navigation }) => {
+export const LoginScreen = ({ navigation, route }) => {
   const { loginUser } = useApp();
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(route?.params?.initialPhone || route?.params?.phone || "");
+  React.useEffect(() => {
+    if (route?.params?.initialPhone || route?.params?.phone) {
+      setPhone(route.params.initialPhone || route.params.phone);
+    }
+  }, [route?.params?.initialPhone, route?.params?.phone]);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState(null);
@@ -43,33 +49,77 @@ export const LoginScreen = ({ navigation }) => {
   const loginPending = useRef(false);
   const handleLogin = async () => {
     if (loginPending.current) return;
-    const cleanPhone = phone ? phone.trim() : "";
+    const normalized = normalizeIndianPhone(phone);
     const cleanPass = password || "";
 
-    if (!/^\d{10}$/.test(cleanPhone) || !cleanPass) {
-      showAlert("Error", "Please enter your 10-digit phone number and password.");
+    if (!isValidIndianMobile(normalized) || !cleanPass) {
+      showAlert("Error", "Please enter a valid 10-digit Indian mobile number and password.");
       return;
     }
 
     loginPending.current = true;
     setLoading(true);
     try {
-      const user = await loginUser(cleanPhone, cleanPass);
+      const user = await loginUser(normalized, cleanPass);
 
       if (user) {
         navigateAfterLogin();
       } else {
-        showAlert(
-          "Login Failed",
-          "Invalid phone number or password. If you are a new customer, please register on the Sign Up tab."
+        Alert.alert(
+          "Account Not Found",
+          `No account exists for +91 ${normalized}. Would you like to create a new account?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Create Account",
+              onPress: () => navigation.navigate("Signup", { initialPhone: normalized })
+            }
+          ]
         );
       }
     } catch (error) {
-
-      showAlert(
-        "Login Failed",
-        error?.message || "Could not log in. Please check your credentials."
-      );
+      const errorCode = error?.code;
+      const errorMsg = error?.message || "";
+      if (errorCode === 'USER_NOT_FOUND' || errorMsg.includes('not found') || errorMsg.includes('register')) {
+        Alert.alert(
+          "Account Not Found",
+          `No account exists for +91 ${normalized}. Would you like to create a new account?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Create Account",
+              onPress: () => navigation.navigate("Signup", { initialPhone: normalized })
+            }
+          ]
+        );
+      } else if (errorCode === 'PASSWORD_NOT_CONFIGURED' || errorMsg.includes('OTP') || errorMsg.includes('not set')) {
+        Alert.alert(
+          "Password Not Set",
+          "A password is not configured for this account. Please log in using Phone / OTP.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Back to Profile",
+              onPress: () => navigation.navigate("MainTabs", { screen: "ProfileWallet" })
+            }
+          ]
+        );
+      } else if (errorCode === 'INVALID_CREDENTIALS' || errorMsg.includes('Invalid password') || errorMsg.includes('credentials')) {
+        showAlert(
+          "Incorrect Password",
+          "The password you entered is incorrect. Please check your credentials and try again."
+        );
+      } else if (error?.isNetworkError || errorMsg.includes('Network') || errorMsg.includes('internet')) {
+        showAlert(
+          "Network Error",
+          "Unable to connect to the server. Please check your internet connection and try again."
+        );
+      } else {
+        showAlert(
+          "Login Failed",
+          errorMsg || "Could not log in. Please check your credentials."
+        );
+      }
     } finally {
       loginPending.current = false;
       setLoading(false);
@@ -140,7 +190,7 @@ export const LoginScreen = ({ navigation }) => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.inactiveTab}
-                onPress={() => navigation.navigate("Signup")}
+                onPress={() => navigation.navigate("Signup", { initialPhone: normalizeIndianPhone(phone) })}
                 activeOpacity={0.7}
               >
                 <Text style={styles.inactiveTabText}>Sign Up</Text>
@@ -255,7 +305,7 @@ export const LoginScreen = ({ navigation }) => {
           <View style={styles.footerSection}>
             <Text style={styles.footerText}>Don't have an account?</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate("Signup")}
+              onPress={() => navigation.navigate("Signup", { initialPhone: normalizeIndianPhone(phone) })}
               activeOpacity={0.7}
             >
               <Text style={styles.linkText}>Create Account</Text>
