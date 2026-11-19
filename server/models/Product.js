@@ -13,7 +13,22 @@ const productSchema = new mongoose.Schema(
     },
     image: {
       type: String,
-      default: ''
+      default: '',
+      validate: {
+        validator: function(v) {
+          if (!v || typeof v !== 'string') return true;
+          const lower = v.trim().toLowerCase();
+          return !(
+            lower.startsWith('file:') ||
+            lower.startsWith('content:') ||
+            lower.startsWith('blob:') ||
+            lower.includes('/cache/imagepicker') ||
+            lower.includes('com.sfarmart.partner/cache') ||
+            lower.includes('/data/user/')
+          );
+        },
+        message: 'Product image cannot be a device-local file, content, or blob URL.'
+      }
     },
     vendor: {
       type: mongoose.Schema.Types.ObjectId,

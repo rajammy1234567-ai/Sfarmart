@@ -1,9 +1,28 @@
 import { API_BASE_URL } from '../config/env';
 
+export const isDeviceLocalPath = (uri) => {
+  if (!uri || typeof uri !== 'string') return false;
+  const lower = uri.trim().toLowerCase();
+  return (
+    lower.startsWith('file:') ||
+    lower.startsWith('content:') ||
+    lower.startsWith('blob:') ||
+    lower.includes('/cache/imagepicker') ||
+    lower.includes('com.sfarmart.partner/cache') ||
+    lower.includes('host.exp.exponent/cache') ||
+    lower.includes('/data/user/')
+  );
+};
+
 export const resolveMediaUrl = (uri, customApiBase = null) => {
   if (!uri || typeof uri !== 'string') return null;
   const trimmed = uri.trim();
   if (!trimmed) return null;
+
+  // Never attempt to resolve or load device-local cache paths from other phones
+  if (isDeviceLocalPath(trimmed)) {
+    return null;
+  }
 
   const effectiveBase = customApiBase || API_BASE_URL || (typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : '') || '';
   const hostBase = effectiveBase.replace(/\/api\/?$/, '');
@@ -24,5 +43,5 @@ export const resolveMediaUrl = (uri, customApiBase = null) => {
 };
 
 export const isValidImageUri = (uri) => {
-  return typeof uri === 'string' && uri.trim().length > 0;
+  return typeof uri === 'string' && uri.trim().length > 0 && !isDeviceLocalPath(uri);
 };

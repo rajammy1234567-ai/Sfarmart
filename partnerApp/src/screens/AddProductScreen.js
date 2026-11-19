@@ -82,6 +82,7 @@ export const AddProductScreen = ({ navigation, route }) => {
   const [description, setDescription] = useState(editItem?.description || '');
   const [imageUrl, setImageUrl] = useState(editItem?.image || '');
   const [previewUri, setPreviewUri] = useState(editItem?.image || '');
+  const [selectedAsset, setSelectedAsset] = useState(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [isVeg, setIsVeg] = useState(editItem?.isVeg !== undefined ? editItem.isVeg : true);
@@ -148,15 +149,18 @@ export const AddProductScreen = ({ navigation, route }) => {
   );
 
   const handlePickImage = async () => {
-    setUploadError(null);
     try {
       if (Platform.OS !== 'web') {
-        const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-          if (!canAskAgain) {
+          if (Platform.OS === 'android') {
             showAlert(
-              'Photo Permission Required',
-              'Photo library access is disabled. Please open device Settings to allow photo selection.'
+              'Permission Required',
+              'Please allow photo library access in Android Settings to select product photos.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings?.() }
+              ]
             );
           } else {
             showAlert('Permission Denied', 'Please grant photo library access to choose a product picture.');
@@ -178,7 +182,10 @@ export const AddProductScreen = ({ navigation, route }) => {
       }
 
       const asset = result.assets[0];
+      setSelectedAsset(asset);
       setPreviewUri(asset.uri);
+      setImageUrl('');
+      setUploadError(null);
       setIsUploadingImage(true);
 
       if (uploadProductImage) {
@@ -189,20 +196,51 @@ export const AddProductScreen = ({ navigation, route }) => {
           setPreviewUri(uploadRes.url || finalPath);
           setUploadError(null);
         } else {
+          setImageUrl('');
           setUploadError(uploadRes?.message || 'Failed to upload photo. Tap retry.');
         }
       } else {
-        setImageUrl(asset.uri);
+        setImageUrl('');
+        setUploadError('Image upload service is currently unavailable. Please try again.');
       }
     } catch (err) {
       console.warn('Image picker error:', err);
+      setImageUrl('');
       setUploadError('Could not open photo picker. Please try again.');
     } finally {
       setIsUploadingImage(false);
     }
   };
 
+  const handleRetryUpload = async () => {
+    if (!selectedAsset && !previewUri) return;
+    const targetAsset = selectedAsset || { uri: previewUri };
+    setIsUploadingImage(true);
+    setUploadError(null);
+    try {
+      if (uploadProductImage) {
+        const uploadRes = await uploadProductImage(targetAsset);
+        if (uploadRes && uploadRes.success) {
+          const finalPath = uploadRes.path || uploadRes.url;
+          setImageUrl(finalPath);
+          setPreviewUri(uploadRes.url || finalPath);
+          setUploadError(null);
+        } else {
+          setImageUrl('');
+          setUploadError(uploadRes?.message || 'Failed to upload photo. Tap retry.');
+        }
+      }
+    } catch (err) {
+      console.warn('Retry image upload error:', err);
+      setImageUrl('');
+      setUploadError('Photo upload failed. Please check network connection.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleRemoveImage = () => {
+    setSelectedAsset(null);
     setImageUrl('');
     setPreviewUri('');
     setUploadError(null);
@@ -313,6 +351,46 @@ export const AddProductScreen = ({ navigation, route }) => {
       return;
     }
 
+    if (isUploadingImage) {
+      showFeedback('Please Wait', 'Product photo is still uploading. Please wait for the upload to complete before saving.');
+      return;
+    }
+
+    if (uploadError) {
+      showFeedback('Photo Upload Required', 'The selected photo failed to upload. Please tap Retry or choose another photo before saving.');
+      return;
+    }
+
+    const isLocalDevicePath = (p) => {
+      if (!p || typeof p !== 'string') return false;
+      const l = p.trim().toLowerCase();
+      return (
+        l.startsWith('file:') ||
+        l.startsWith('content:') ||
+        l.startsWith('blob:') ||
+        l.includes('/cache/imagepicker') ||
+        l.includes('com.sfarmart.partner/cache') ||
+        l.includes('/data/user/')
+      );
+    };
+
+    if (isLocalDevicePath(imageUrl) || (previewUri && isLocalDevicePath(previewUri) && (!imageUrl || isLocalDevicePath(imageUrl)))) {
+      showFeedback('Photo Upload Required', 'The product photo must be uploaded before saving. Please tap Retry or choose another photo.');
+      return;
+    }
+
+    let finalImage = imageUrl.trim();
+    if (!finalImage && previewUri && !isLocalDevicePath(previewUri)) {
+      finalImage = previewUri.trim();
+    }
+    if (!finalImage) {
+      finalImage = 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80';
+    }
+    if (isLocalDevicePath(finalImage)) {
+      showFeedback('Invalid Photo', 'Local device file paths cannot be saved as product photos.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
@@ -326,10 +404,7 @@ export const AddProductScreen = ({ navigation, route }) => {
         stock: parsedStock,
         stockQty: parsedStock,
         description: description.trim(),
-        image:
-          imageUrl.trim() ||
-          previewUri.trim() ||
-          'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80',
+        image: finalImage,
         isVeg: isFoodCategory ? isVeg : true
       };
 
@@ -762,8 +837,12 @@ export const AddProductScreen = ({ navigation, route }) => {
                 <View style={styles.uploadErrorBox}>
                   <Ionicons name="alert-circle-outline" size={16} color="#ef4444" />
                   <Text style={styles.uploadErrorText}>{uploadError}</Text>
-                  <TouchableOpacity onPress={handlePickImage} style={styles.uploadRetryBtn}>
-                    <Text style={styles.uploadRetryText}>Retry</Text>
+                  <TouchableOpacity onPress={handleRetryUpload} disabled={isUploadingImage} style={styles.uploadRetryBtn}>
+                    {isUploadingImage ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Text style={styles.uploadRetryText}>Retry</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               ) : null}

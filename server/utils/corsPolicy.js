@@ -30,6 +30,7 @@ export const isAllowedClientOrigin = (origin) => {
     'https://farmart-admin.onrender.com',
     'https://farm-mart.onrender.com',
     'https://sfarmart.onrender.com',
+    'http://localhost:8082',
     ...getClientOrigins()
   ];
 

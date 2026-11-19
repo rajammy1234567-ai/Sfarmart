@@ -107,13 +107,14 @@ export async function storeProductImage({ buffer, originalName, mimeType, vendor
   }
 
   const normalizedMime = (mimeType || '').toLowerCase().trim();
-  if (!ALLOWED_MIME_TYPES.has(normalizedMime)) {
-    throw new Error(`Unsupported image MIME type "${mimeType}". Allowed types: JPEG, PNG, WEBP, GIF.`);
-  }
-
   const magicCheck = validateImageMagicBytes(buffer, normalizedMime);
   if (!magicCheck.valid) {
     throw new Error(`Security validation failed: ${magicCheck.reason}`);
+  }
+
+  const effectiveMime = magicCheck.detectedMime;
+  if (!ALLOWED_MIME_TYPES.has(effectiveMime)) {
+    throw new Error(`Unsupported image format "${effectiveMime}". Allowed types: JPEG, PNG, WEBP, GIF.`);
   }
 
   const extension = magicCheck.detectedMime === 'image/png'
@@ -178,13 +179,14 @@ export async function storeShopImage({ buffer, originalName, mimeType, vendorId 
   }
 
   const normalizedMime = (mimeType || '').toLowerCase().trim();
-  if (!ALLOWED_MIME_TYPES.has(normalizedMime)) {
-    throw new Error(`Unsupported image MIME type "${mimeType}". Allowed types: JPEG, PNG, WEBP, GIF.`);
-  }
-
   const magicCheck = validateImageMagicBytes(buffer, normalizedMime);
   if (!magicCheck.valid) {
     throw new Error(`Security validation failed: ${magicCheck.reason}`);
+  }
+
+  const effectiveMime = magicCheck.detectedMime;
+  if (!ALLOWED_MIME_TYPES.has(effectiveMime)) {
+    throw new Error(`Unsupported image format "${effectiveMime}". Allowed types: JPEG, PNG, WEBP, GIF.`);
   }
 
   const extension = magicCheck.detectedMime === 'image/png'

@@ -13,6 +13,20 @@ describe('Admin CORS Policy Verification', () => {
     assert.equal(isAllowedClientOrigin('https://farm-mart.onrender.com'), true);
     assert.equal(isAllowedClientOrigin('http://localhost:5173'), true);
     assert.equal(isAllowedClientOrigin('http://localhost:8081'), true);
+    assert.equal(isAllowedClientOrigin('http://localhost:8082'), true);
+  });
+
+  test('allows Partner Web local origin even in production mode', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevStagingMode = process.env.STAGING_MODE;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.STAGING_MODE;
+      assert.equal(isAllowedClientOrigin('http://localhost:8082'), true);
+    } finally {
+      process.env.NODE_ENV = prevNodeEnv;
+      if (prevStagingMode !== undefined) process.env.STAGING_MODE = prevStagingMode;
+    }
   });
 
   test('rejects unauthorized external origins', () => {

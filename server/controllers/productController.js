@@ -23,6 +23,22 @@ export const parseNumericField = (val) => {
   return null;
 };
 
+// Helper to detect device-local, content, or blob paths that must never be persisted to production
+export const isInvalidClientImagePath = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  const lower = url.trim().toLowerCase();
+  return (
+    lower.startsWith('file:') ||
+    lower.startsWith('content:') ||
+    lower.startsWith('blob:') ||
+    lower.startsWith('data:') ||
+    lower.includes('/cache/imagepicker') ||
+    lower.includes('com.sfarmart.partner/cache') ||
+    lower.includes('host.exp.exponent/cache') ||
+    lower.includes('/data/user/')
+  );
+};
+
 // Helper to convert uploaded product image URLs to portable relative paths for database persistence
 export const toPortableImagePath = (imageUrl) => {
   if (!imageUrl || typeof imageUrl !== 'string') return imageUrl;
@@ -355,6 +371,15 @@ export const createProduct = async (req, res) => {
         message: 'Pack size / unit is required (e.g. 10 kg, 10 litre, 10 packets, 750 g).'
       });
     }
+
+    if (image && typeof image === 'string' && isInvalidClientImagePath(image)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_IMAGE',
+        message: 'Local device file, content, or blob URLs cannot be saved as product photos. Upload the image first.'
+      });
+    }
+
     const cleanUnit = unit.trim().slice(0, 50);
     const cleanDesc = typeof description === 'string' ? description.trim().slice(0, 1000) : '';
     const cleanImg = typeof image === 'string' && image.trim()
@@ -452,6 +477,13 @@ export const updateProduct = async (req, res) => {
     if (updateData.image !== undefined) {
       if (typeof updateData.image !== 'string') {
         return res.status(400).json({ success: false, code: 'INVALID_IMAGE', message: 'Product image must be a string.' });
+      }
+      if (isInvalidClientImagePath(updateData.image)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_IMAGE',
+          message: 'Local device file, content, or blob URLs cannot be saved as product photos. Upload the image first.'
+        });
       }
       updateData.image = toPortableImagePath(updateData.image.trim()).slice(0, 500);
     }

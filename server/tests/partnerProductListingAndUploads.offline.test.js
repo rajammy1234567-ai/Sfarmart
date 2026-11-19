@@ -6,6 +6,7 @@ import Category from '../models/Category.js';
 import {
   parseNumericField,
   toPortableImagePath,
+  isInvalidClientImagePath,
   formatProductResponse,
   createProduct,
   updateProduct,
@@ -469,6 +470,126 @@ test('Partner Product Listing & Uploads Suite (Offline)', async (t) => {
     // 2. Cancellation restoration
     stockQty += orderQty;
     assert.equal(stockQty, 30, 'Cancelled order restores exact stock quantity');
+  });
+
+  // -------------------------------------------------------------
+  // 9. Local Device Image Validation & Security Guards
+  // -------------------------------------------------------------
+  await t.test('11. isInvalidClientImagePath identifies all local device and cache URIs', () => {
+    assert.equal(isInvalidClientImagePath('file:///data/user/0/com.sfarmart.partner/cache/ImagePicker/87690178-f173-4cd9-bfd9-19c9ba5e88aa.png'), true);
+    assert.equal(isInvalidClientImagePath('content://media/external/images/media/12345'), true);
+    assert.equal(isInvalidClientImagePath('blob:http://localhost:8082/1234-5678'), true);
+    assert.equal(isInvalidClientImagePath('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='), true);
+    assert.equal(isInvalidClientImagePath('/data/user/0/com.sfarmart.partner/cache/photo.jpg'), true);
+    assert.equal(isInvalidClientImagePath('https://farmart-backend-staging.onrender.com/api/uploads/product-images/6ae47c211e70d85570212591'), false);
+    assert.equal(isInvalidClientImagePath('/api/uploads/product-images/6ae47c211e70d85570212591'), false);
+    assert.equal(isInvalidClientImagePath('https://images.unsplash.com/photo-1540420773420-3366772f4999'), false);
+    assert.equal(isInvalidClientImagePath(''), false);
+    assert.equal(isInvalidClientImagePath(null), false);
+  });
+
+  await t.test('12. createProduct and updateProduct reject local file://, content://, and blob: URLs with HTTP 400 INVALID_IMAGE', async () => {
+    const vendorId = new mongoose.Types.ObjectId();
+    const categoryId = new mongoose.Types.ObjectId();
+
+    Category.findOne = async () => ({ _id: categoryId, isActive: true, subCategories: [{ name: 'ghee' }] });
+
+    // 1. Test createProduct rejecting local device path
+    const mockCreateReq = {
+      user: { id: vendorId.toString(), vendorId: vendorId.toString(), role: 'VENDOR' },
+      body: {
+        name: 'Verka Desi Ghee',
+        price: '700',
+        mrp: '750',
+        unit: '1 ltr',
+        category: categoryId.toString(),
+        subCategory: 'ghee',
+        stock: '25',
+        image: 'file:///data/user/0/com.sfarmart.partner/cache/ImagePicker/4c3d0717-b103-415f-b35f-2d9fe53a6513.png'
+      }
+    };
+    const createRes = makeMockRes();
+    await createProduct(mockCreateReq, createRes);
+
+    assert.equal(createRes.statusCode, 400);
+    assert.equal(createRes.body.success, false);
+    assert.equal(createRes.body.code, 'INVALID_IMAGE');
+
+    // 2. Test updateProduct rejecting local device path
+    const productId = new mongoose.Types.ObjectId();
+    Product.findById = async () => ({
+      _id: productId,
+      vendor: vendorId,
+      category: categoryId,
+      price: 700,
+      mrp: 750
+    });
+
+    const mockUpdateReq = {
+      user: { id: vendorId.toString(), vendorId: vendorId.toString(), role: 'VENDOR' },
+      params: { id: productId.toString() },
+      body: {
+        image: 'blob:http://localhost:8082/abc-123'
+      }
+    };
+    const updateRes = makeMockRes();
+    await updateProduct(mockUpdateReq, updateRes);
+
+    assert.equal(updateRes.statusCode, 400);
+    assert.equal(updateRes.body.success, false);
+    assert.equal(updateRes.body.code, 'INVALID_IMAGE');
+  });
+
+  await t.test('13. storeProductImage correctly infers MIME type from magic bytes when client sends generic "image" type', async () => {
+    // Standard PNG buffer with magic bytes
+    const pngBuffer = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52
+    ]);
+
+    // Mock GridFS bucket
+    const mockFileId = new mongoose.Types.ObjectId();
+    const mockBucket = {
+      openUploadStream: (filename, opts) => {
+        const stream = {
+          id: mockFileId,
+          on: (event, handler) => {
+            if (event === 'finish') setImmediate(handler);
+            return stream;
+          },
+          write: () => true,
+          end: () => stream.on('finish', () => {})
+        };
+        return stream;
+      }
+    };
+
+    const origDb = mongoose.connection.db;
+    const origDesc = Object.getOwnPropertyDescriptor(mongoose.mongo, 'GridFSBucket');
+    mongoose.connection.db = {};
+    Object.defineProperty(mongoose.mongo, 'GridFSBucket', {
+      value: function() { return mockBucket; },
+      configurable: true
+    });
+
+    try {
+      // Pass client mimeType: 'image' (as returned by React Native Expo ImagePicker)
+      const res = await storeProductImage({
+        buffer: pngBuffer,
+        originalName: 'photo.png',
+        mimeType: 'image',
+        vendorId: 'test-vendor'
+      });
+
+      assert.equal(res.fileId, mockFileId.toString());
+      assert.equal(res.mimeType, 'image/png', 'MIME type must be securely inferred from magic bytes');
+      assert.equal(res.path, `/api/uploads/product-images/${mockFileId.toString()}`);
+    } finally {
+      mongoose.connection.db = origDb;
+      if (origDesc) {
+        Object.defineProperty(mongoose.mongo, 'GridFSBucket', origDesc);
+      }
+    }
   });
 });
 

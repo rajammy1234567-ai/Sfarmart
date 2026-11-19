@@ -493,29 +493,91 @@ export const PartnerProvider = ({ children }) => {
     }
   };
 
+  // Helper to resolve cross-platform upload payload safely
+  const resolveUploadPayload = async (fileInput, defaultPrefix = 'photo') => {
+    // 1. Direct browser File or Blob (Web)
+    if (typeof window !== 'undefined') {
+      if (fileInput instanceof Blob || (typeof File !== 'undefined' && fileInput instanceof File)) {
+        const ext = fileInput.type === 'image/png' ? 'png' : fileInput.type === 'image/webp' ? 'webp' : 'jpg';
+        const name = fileInput.name || `${defaultPrefix}_${Date.now()}.${ext}`;
+        return { file: fileInput, name, isWebBlob: true };
+      }
+      if (fileInput && typeof fileInput === 'object' && fileInput.file && (fileInput.file instanceof Blob || (typeof File !== 'undefined' && fileInput.file instanceof File))) {
+        return { file: fileInput.file, name: fileInput.file.name || `${defaultPrefix}_${Date.now()}.jpg`, isWebBlob: true };
+      }
+    }
+
+    // 2. Object with URI (React Native on Android/iOS or Expo Web blob/data)
+    if (fileInput && typeof fileInput === 'object' && fileInput.uri) {
+      const uri = fileInput.uri;
+      const rawName = fileInput.fileName || fileInput.name || '';
+      const rawMime = fileInput.mimeType;
+
+      let ext = '';
+      const matchExt = (rawName || uri).split('?')[0].match(/\.([a-zA-Z0-9]+)$/);
+      if (matchExt) {
+        ext = matchExt[1].toLowerCase();
+      }
+
+      let mime = 'image/jpeg';
+      if (rawMime && rawMime.includes('/') && rawMime.toLowerCase() !== 'image/*') {
+        mime = rawMime.toLowerCase();
+        if (mime === 'image/jpg') mime = 'image/jpeg';
+      } else if (ext === 'png') {
+        mime = 'image/png';
+      } else if (ext === 'webp') {
+        mime = 'image/webp';
+      } else if (ext === 'gif') {
+        mime = 'image/gif';
+      } else {
+        mime = 'image/jpeg';
+      }
+
+      const fileExt = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : mime === 'image/gif' ? 'gif' : 'jpg';
+      const safeName = rawName
+        ? rawName.replace(/[^a-zA-Z0-9._-]/g, '_')
+        : `${defaultPrefix}_${Date.now()}.${fileExt}`;
+      const finalName = safeName.includes('.') ? safeName : `${safeName}.${fileExt}`;
+
+      // Web blob/data URIs
+      if (typeof window !== 'undefined' && Platform.OS === 'web' && (uri.startsWith('blob:') || uri.startsWith('data:'))) {
+        const fetched = await window.fetch(uri);
+        const rawBlob = await fetched.blob();
+        const finalBlob = rawBlob.type && rawBlob.type.startsWith('image/')
+          ? rawBlob
+          : new Blob([rawBlob], { type: mime });
+        return { file: finalBlob, name: finalName, isWebBlob: true };
+      }
+
+      // React Native native file descriptor (Android / iOS)
+      return {
+        file: {
+          uri,
+          name: finalName,
+          type: mime
+        },
+        name: finalName,
+        isWebBlob: false
+      };
+    }
+
+    return null;
+  };
+
   // Upload product image to durable storage
   const uploadProductImage = async (fileInput) => {
     if (!token) return { success: false, message: 'Not authenticated' };
     try {
-      const formData = new FormData();
-
-      if (typeof window !== 'undefined' && (fileInput instanceof Blob || (typeof File !== 'undefined' && fileInput instanceof File))) {
-        formData.append('image', fileInput, fileInput.name || 'product.jpg');
-      } else if (typeof fileInput === 'object' && fileInput.uri) {
-        if (typeof window !== 'undefined' && (fileInput.uri.startsWith('blob:') || fileInput.uri.startsWith('data:'))) {
-          const fetched = await window.fetch(fileInput.uri);
-          const blob = await fetched.blob();
-          formData.append('image', blob, fileInput.fileName || fileInput.name || 'product.jpg');
-        } else {
-          // React Native native file descriptor
-          formData.append('image', {
-            uri: fileInput.uri,
-            name: fileInput.fileName || fileInput.name || 'photo.jpg',
-            type: fileInput.mimeType || fileInput.type || 'image/jpeg'
-          });
-        }
-      } else {
+      const resolved = await resolveUploadPayload(fileInput, 'prod');
+      if (!resolved) {
         return { success: false, message: 'Invalid image input format.' };
+      }
+
+      const formData = new FormData();
+      if (resolved.isWebBlob) {
+        formData.append('image', resolved.file, resolved.name);
+      } else {
+        formData.append('image', resolved.file);
       }
 
       const res = await fetch(`${API_BASE_URL}/uploads/product-image`, {
@@ -551,24 +613,16 @@ export const PartnerProvider = ({ children }) => {
   const uploadShopPhoto = async (fileInput) => {
     if (!token) return { success: false, message: 'Not authenticated' };
     try {
-      const formData = new FormData();
-
-      if (typeof window !== 'undefined' && (fileInput instanceof Blob || (typeof File !== 'undefined' && fileInput instanceof File))) {
-        formData.append('image', fileInput, fileInput.name || 'shop_cover.jpg');
-      } else if (typeof fileInput === 'object' && fileInput.uri) {
-        if (typeof window !== 'undefined' && (fileInput.uri.startsWith('blob:') || fileInput.uri.startsWith('data:'))) {
-          const fetched = await window.fetch(fileInput.uri);
-          const blob = await fetched.blob();
-          formData.append('image', blob, fileInput.fileName || fileInput.name || 'shop_cover.jpg');
-        } else {
-          formData.append('image', {
-            uri: fileInput.uri,
-            name: fileInput.fileName || fileInput.name || 'shop_cover.jpg',
-            type: fileInput.mimeType || fileInput.type || 'image/jpeg'
-          });
-        }
-      } else {
+      const resolved = await resolveUploadPayload(fileInput, 'shop');
+      if (!resolved) {
         return { success: false, message: 'Invalid image input format.' };
+      }
+
+      const formData = new FormData();
+      if (resolved.isWebBlob) {
+        formData.append('image', resolved.file, resolved.name);
+      } else {
+        formData.append('image', resolved.file);
       }
 
       const res = await fetch(`${API_BASE_URL}/uploads/shop-photo`, {
@@ -653,6 +707,23 @@ export const PartnerProvider = ({ children }) => {
     return null;
   };
 
+  // Helper to sanitize product image so local device paths are never persisted
+  const sanitizeProductImage = (img) => {
+    if (!img || typeof img !== 'string') return 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80';
+    const lower = img.trim().toLowerCase();
+    if (
+      lower.startsWith('file:') ||
+      lower.startsWith('content:') ||
+      lower.startsWith('blob:') ||
+      lower.includes('/cache/imagepicker') ||
+      lower.includes('com.sfarmart.partner/cache') ||
+      lower.includes('/data/user/')
+    ) {
+      return 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80';
+    }
+    return img.trim();
+  };
+
   // Add Product permanently to MongoDB
   const addInventoryItem = async (item) => {
     if (!token) return { success: false, message: 'Not authenticated' };
@@ -673,7 +744,7 @@ export const PartnerProvider = ({ children }) => {
           unit: typeof item.unit === 'string' ? item.unit.trim() : (item.unit ? String(item.unit).trim() : ''),
           stockQty: Number(item.stock ?? 25),
           description: item.description || '',
-          image: item.image || 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=80',
+          image: sanitizeProductImage(item.image),
           isVeg: item.isVeg !== undefined ? item.isVeg : true
         })
       });
@@ -712,7 +783,7 @@ export const PartnerProvider = ({ children }) => {
           unit: typeof item.unit === 'string' ? item.unit.trim() : (item.unit ? String(item.unit).trim() : ''),
           stockQty: Number(item.stock || item.stockQty || 25),
           description: item.description || '',
-          image: item.image,
+          image: sanitizeProductImage(item.image),
           isVeg: item.isVeg !== undefined ? item.isVeg : true
         })
       });
