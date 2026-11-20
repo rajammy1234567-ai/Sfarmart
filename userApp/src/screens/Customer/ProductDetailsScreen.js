@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   imageWrapGrocery: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     padding: 16
   },
   imageWrapFood: {

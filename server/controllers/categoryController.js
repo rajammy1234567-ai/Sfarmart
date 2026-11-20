@@ -911,13 +911,15 @@ export const updateCategoryAdmin = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }
 
-    const allowed = ['name', 'icon', 'image', 'type', 'sortOrder', 'isActive', 'subCategories'];
+    const allowed = ['name', 'icon', 'image', 'type', 'sortOrder', 'isActive', 'homeVisibility', 'subCategories'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         if (key === 'name' && typeof req.body.name === 'string' && req.body.name.trim()) {
           const norm = req.body.name.trim().replace(/\s+/g, ' ');
           category.name = norm;
           category.nameNormalized = norm.toLowerCase();
+        } else if (key === 'homeVisibility') {
+          category.homeVisibility = Boolean(req.body.homeVisibility);
         } else {
           category[key] = req.body[key];
         }

@@ -62,6 +62,8 @@ import adminRoutes from './routes/adminRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import riderRoutes from './routes/riderRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import bannerRoutes from './routes/bannerRoutes.js';
+import homeSectionRoutes from './routes/homeSectionRoutes.js';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -227,6 +229,8 @@ app.use('/api', contactRoutes);
 app.use('/api', jobRoutes);
 
 
+app.use('/api', bannerRoutes);
+app.use('/api', homeSectionRoutes);
 app.use('/api', userRoutes);
 app.use('/api', cartRoutes);
 

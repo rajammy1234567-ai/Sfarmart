@@ -8,6 +8,18 @@ import {
   getAllCategoriesAdmin,
   updateCategoryAdmin
 } from '../controllers/categoryController.js';
+import {
+  getAllBannersAdmin,
+  createBannerAdmin,
+  updateBannerAdmin,
+  deleteBannerAdmin
+} from '../controllers/bannerController.js';
+import {
+  getAllHomeSectionsAdmin,
+  createHomeSectionAdmin,
+  updateHomeSectionAdmin,
+  deleteHomeSectionAdmin
+} from '../controllers/homeSectionController.js';
 import { verifyToken, requireRole, requireSuperAdmin, requireAdminModule } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -44,6 +56,25 @@ router.post('/category-requests/:id/reject', verifyToken, requireRole('ADMIN'), 
 router.post('/category-requests/:id/map', verifyToken, requireRole('ADMIN'), mapCategoryRequestAdmin);
 
 router.get('/categories', verifyToken, requireRole('ADMIN'), getAllCategoriesAdmin);
+router.put('/categories/:id', verifyToken, requireRole('ADMIN'), updateCategoryAdmin);
 router.patch('/categories/:id', verifyToken, requireRole('ADMIN'), updateCategoryAdmin);
+
+// =========================================================================
+// Banner Management Endpoints (Admin Protected)
+// =========================================================================
+router.get('/banners', verifyToken, requireRole('ADMIN'), getAllBannersAdmin);
+router.post('/banners', verifyToken, requireRole('ADMIN'), createBannerAdmin);
+router.put('/banners/:id', verifyToken, requireRole('ADMIN'), updateBannerAdmin);
+router.patch('/banners/:id', verifyToken, requireRole('ADMIN'), updateBannerAdmin);
+router.delete('/banners/:id', verifyToken, requireRole('ADMIN'), deleteBannerAdmin);
+
+// =========================================================================
+// Home Promotional & Product Sections Management (Admin Protected)
+// =========================================================================
+router.get('/home-sections', verifyToken, requireRole('ADMIN'), getAllHomeSectionsAdmin);
+router.post('/home-sections', verifyToken, requireRole('ADMIN'), createHomeSectionAdmin);
+router.put('/home-sections/:id', verifyToken, requireRole('ADMIN'), updateHomeSectionAdmin);
+router.patch('/home-sections/:id', verifyToken, requireRole('ADMIN'), updateHomeSectionAdmin);
+router.delete('/home-sections/:id', verifyToken, requireRole('ADMIN'), deleteHomeSectionAdmin);
 
 export default router;

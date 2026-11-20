@@ -341,6 +341,27 @@ export const apiService = {
     }
   },
 
+  // Merchandising & Banners
+  getBanners: async (params = {}) => {
+    try {
+      const response = await apiClient.get('/banners', { params });
+      return response.data;
+    } catch (error) {
+      console.warn('Failed to fetch banners:', error.message);
+      return { success: false, banners: [] };
+    }
+  },
+
+  getHomeSections: async () => {
+    try {
+      const response = await apiClient.get('/home-sections');
+      return response.data;
+    } catch (error) {
+      console.warn('Failed to fetch home sections:', error.message);
+      return { success: false, sections: [] };
+    }
+  },
+
   // Categories
   getHomeCategories: async (type) => {
     try {

@@ -272,6 +272,28 @@ export default function CategoriesPage() {
     }
   };
 
+  // Toggle Category Home Visibility
+  const toggleHomeVisibility = async (category) => {
+    try {
+      const nextVal = !category.homeVisibility;
+      const res = await adminFetch(`/admin/categories/${category._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ homeVisibility: nextVal })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories((prev) =>
+          prev.map((c) => (c._id === category._id ? { ...c, homeVisibility: nextVal } : c))
+        );
+      } else {
+        alert(data.message || 'Failed to update home visibility');
+      }
+    } catch (err) {
+      console.error('Error toggling category home visibility:', err);
+    }
+  };
+
   // Update Category Sort Order
   const handleSortOrderBlur = async (categoryId, newOrder) => {
     const parsed = parseInt(newOrder, 10);
@@ -467,6 +489,7 @@ export default function CategoriesPage() {
                 <th style={styles.th}>Linked Products</th>
                 <th style={styles.th}>Home Sort Order</th>
                 <th style={styles.th}>Customer Visibility</th>
+                <th style={styles.th}>Home Feed</th>
               </tr>
             </thead>
             <tbody>
@@ -534,6 +557,20 @@ export default function CategoriesPage() {
                       }}
                     >
                       {c.isActive ? 'Active (Live)' : 'Inactive (Hidden)'}
+                    </button>
+                  </td>
+                  <td style={styles.td}>
+                    <button
+                      onClick={() => toggleHomeVisibility(c)}
+                      style={{
+                        ...styles.toggleBtn,
+                        backgroundColor: c.homeVisibility ? '#eff6ff' : '#f8fafc',
+                        color: c.homeVisibility ? '#2563eb' : '#64748b',
+                        borderColor: c.homeVisibility ? '#bfdbfe' : '#cbd5e1'
+                      }}
+                      title="Toggle whether this category appears on the Customer Home screen"
+                    >
+                      {c.homeVisibility ? 'Visible on Home' : 'Hidden from Home'}
                     </button>
                   </td>
                 </tr>

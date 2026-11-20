@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   },
   imageContainerGrocery: {
     height: 128,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     padding: 8
   },
   imageContainerFood: {

@@ -873,7 +873,7 @@ const styles = StyleSheet.create({
     borderColor: '#f1f5f9'
   },
   prodImgContainerGrocery: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     padding: 2
   },
   prodImg: {

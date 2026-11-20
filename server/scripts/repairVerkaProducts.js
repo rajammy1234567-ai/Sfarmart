@@ -4,6 +4,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { isInvalidClientImagePath } from '../controllers/productController.js';
+import { storeProductImage } from '../services/imageStorageService.js';
 
 // Exact product-and-pack matched durable high-resolution images for Verka products
 export const VERKA_REPAIR_MAP = {
@@ -105,20 +106,43 @@ export async function repairProducts({ mongoUri, customImageMap = {}, execute = 
     }
 
     if (execute) {
+      let finalImagePath = targetImage;
+      try {
+        console.log(`  Downloading image bytes from: ${targetImage}`);
+        const imgRes = await fetch(targetImage, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (!imgRes.ok) {
+          throw new Error(`Download failed: HTTP ${imgRes.status}`);
+        }
+        const arrayBuf = await imgRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuf);
+
+        console.log(`  Storing image (${Math.round(buffer.length / 1024)} KB) into MongoDB GridFS durable storage...`);
+        const stored = await storeProductImage({
+          buffer,
+          originalName: `${product.name.replace(/\s+/g, '_')}_${product.unit}.jpg`,
+          mimeType: check.contentType,
+          vendorId: product.vendor
+        });
+        finalImagePath = stored.path;
+        console.log(`  Durable GridFS URL generated: ${finalImagePath}`);
+      } catch (storeErr) {
+        console.warn(`  [WARN] GridFS storage failed (${storeErr.message}), falling back to direct durable CDN reference.`);
+      }
+
       await productsCol.updateOne(
         { _id: product._id },
         {
           $set: {
-            image: targetImage,
+            image: finalImagePath,
             updatedAt: new Date()
           }
         }
       );
       console.log(`  [UPDATED] Successfully repaired product image in MongoDB.`);
-      results.push({ id: idStr, name: product.name, status: 'REPAIRED', newImage: targetImage });
+      results.push({ id: idStr, name: product.name, status: 'REPAIRED', durableImage: finalImagePath });
     } else {
-      console.log(`  [DRY-RUN] Would update product image. Run with execute=true to persist.`);
-      results.push({ id: idStr, name: product.name, status: 'DRY_RUN_ELIGIBLE', newImage: targetImage });
+      console.log(`  [DRY-RUN] Would download bytes and store in durable GridFS media storage. Run with execute=true to persist.`);
+      results.push({ id: idStr, name: product.name, status: 'DRY_RUN_ELIGIBLE', proposedSource: targetImage });
     }
   }
 

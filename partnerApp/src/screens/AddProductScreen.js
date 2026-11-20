@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,22 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   Modal,
+  PanResponder,
   useWindowDimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import { usePartner } from '../context/PartnerContext';
 import { colors } from '../theme/colors';
 import { GlassCard } from '../components/GlassCard';
 import { WaterBackground } from '../components/WaterBackground';
 import { showAlert } from '../utils/alert';
 import { useModalFocus, safeBlurActiveElement } from '../utils/focusManager';
+import { resolveMediaUrl } from '../utils/media';
+import { API_BASE_URL } from '../config/env';
 
 // Helper to assign real vector icons & curated colors to each category
 export const getCategoryMeta = (catName = '') => {
@@ -62,10 +67,12 @@ export const AddProductScreen = ({ navigation, route }) => {
   const { width } = useWindowDimensions();
   const isTablet = width > 600;
 
-  const editItem = route?.params?.product || route?.params?.item || null;
+  const routeProduct = route?.params?.product || route?.params?.item || null;
+  const [fetchedProduct, setFetchedProduct] = useState(null);
+  const editItem = routeProduct || fetchedProduct;
   const isEditing = Boolean(editItem);
 
-  const { addInventoryItem, updateInventoryItem, uploadProductImage, categories = [], fetchCategories, requestCategory, createCategory, vendor } = usePartner();
+  const { addInventoryItem, updateInventoryItem, uploadProductImage, categories = [], fetchCategories, requestCategory, createCategory, vendor, inventory = [] } = usePartner();
 
   const displayCategories = Array.isArray(categories) ? categories : [];
 
@@ -81,12 +88,113 @@ export const AddProductScreen = ({ navigation, route }) => {
   );
   const [description, setDescription] = useState(editItem?.description || '');
   const [imageUrl, setImageUrl] = useState(editItem?.image || '');
-  const [previewUri, setPreviewUri] = useState(editItem?.image || '');
+  const [previewUri, setPreviewUri] = useState(resolveMediaUrl(editItem?.image) || editItem?.image || '');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [isVeg, setIsVeg] = useState(editItem?.isVeg !== undefined ? editItem.isVeg : true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Active preview URI resolver: ensures durable Render URLs are always absolute & handles relative /api/ paths
+  const activePreviewUri = resolveMediaUrl(previewUri) || resolveMediaUrl(imageUrl) || resolveMediaUrl(editItem?.image) || '';
+
+  // Web reload recovery: recover product from URL ?productId=... if not passed in route.params
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlPid = params.get('productId');
+        if (urlPid && !routeProduct) {
+          const found = (inventory || []).find((p) => (p.id || p._id || p.productId) === urlPid);
+          if (found) {
+            setFetchedProduct(found);
+          } else {
+            fetch(`${API_BASE_URL}/products/${urlPid}`)
+              .then((r) => r.json())
+              .then((data) => {
+                if (data?.success && data.product) {
+                  setFetchedProduct(data.product);
+                }
+              })
+              .catch((err) => console.warn('Failed to load product from URL param:', err));
+          }
+        }
+      } catch (e) {
+        console.warn('URL parsing error:', e);
+      }
+    }
+  }, [routeProduct, inventory]);
+
+  // Synchronize browser URL query params on Web when editing so full browser reload (F5) retains the product
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location && editItem) {
+      const pid = editItem.id || editItem._id || editItem.productId;
+      if (pid) {
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('productId') !== pid || url.searchParams.get('screen') !== 'AddProduct') {
+            url.searchParams.set('screen', 'AddProduct');
+            url.searchParams.set('productId', pid);
+            window.history.replaceState({}, '', url.toString());
+          }
+        } catch {}
+      }
+    }
+  }, [editItem]);
+
+  // Synchronize form fields whenever editItem changes or loads
+  useEffect(() => {
+    if (editItem) {
+      setName(editItem.name || '');
+      setPrice(editItem.price !== undefined ? String(editItem.price) : '');
+      setMrp(editItem.mrp !== undefined ? String(editItem.mrp) : '');
+      setUnit(editItem.unit ? String(editItem.unit) : '');
+      setStock(
+        editItem.stock !== undefined
+          ? String(editItem.stock)
+          : editItem.stockQty !== undefined
+          ? String(editItem.stockQty)
+          : '50'
+      );
+      setDescription(editItem.description || '');
+      const initialImg = editItem.image || '';
+      setImageUrl(initialImg);
+      setPreviewUri(resolveMediaUrl(initialImg) || initialImg);
+      setUploadError(null);
+      setIsVeg(editItem.isVeg !== undefined ? editItem.isVeg : true);
+      setSelectedSubCategory(editItem.subCategory || '');
+      const cId = editItem.categoryId || (typeof editItem.category === 'object' ? editItem.category?._id : editItem.category);
+      if (cId) setSelectedCatId(cId);
+    }
+  }, [editItem]);
+
+  // Photo Adjuster state
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustZoom, setAdjustZoom] = useState(1.0);
+  const [adjustPan, setAdjustPan] = useState({ x: 0, y: 0 });
+  const [adjustRotate, setAdjustRotate] = useState(0);
+  const [isApplyingAdjust, setIsApplyingAdjust] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const panRef = useRef({ x: 0, y: 0 });
+
+  // PanResponder for touch / mouse drag & reposition in adjuster
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        panStartRef.current = { ...panRef.current };
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        const nextX = Math.round(panStartRef.current.x + gestureState.dx);
+        const nextY = Math.round(panStartRef.current.y + gestureState.dy);
+        const boundedX = Math.max(-180, Math.min(180, nextX));
+        const boundedY = Math.max(-180, Math.min(180, nextY));
+        setAdjustPan({ x: boundedX, y: boundedY });
+        panRef.current = { x: boundedX, y: boundedY };
+      }
+    })
+  ).current;
 
   // Category request modal state
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -97,7 +205,7 @@ export const AddProductScreen = ({ navigation, route }) => {
   const [newCatReason, setNewCatReason] = useState('');
   const [isRequestingCategory, setIsRequestingCategory] = useState(false);
 
-  useModalFocus(showCategoryModal);
+  useModalFocus(showCategoryModal || showAdjustModal);
 
   useEffect(() => {
     if (fetchCategories && (!categories || categories.length === 0)) {
@@ -171,9 +279,8 @@ export const AddProductScreen = ({ navigation, route }) => {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
+        allowsEditing: false,
+        quality: 0.9,
         selectionLimit: 1
       });
 
@@ -192,8 +299,9 @@ export const AddProductScreen = ({ navigation, route }) => {
         const uploadRes = await uploadProductImage(asset);
         if (uploadRes && uploadRes.success) {
           const finalPath = uploadRes.path || uploadRes.url;
+          const fullUrl = uploadRes.url || finalPath;
           setImageUrl(finalPath);
-          setPreviewUri(uploadRes.url || finalPath);
+          setPreviewUri(resolveMediaUrl(fullUrl) || fullUrl);
           setUploadError(null);
         } else {
           setImageUrl('');
@@ -213,8 +321,8 @@ export const AddProductScreen = ({ navigation, route }) => {
   };
 
   const handleRetryUpload = async () => {
-    if (!selectedAsset && !previewUri) return;
-    const targetAsset = selectedAsset || { uri: previewUri };
+    if (!selectedAsset && !activePreviewUri) return;
+    const targetAsset = selectedAsset || { uri: activePreviewUri };
     setIsUploadingImage(true);
     setUploadError(null);
     try {
@@ -222,8 +330,9 @@ export const AddProductScreen = ({ navigation, route }) => {
         const uploadRes = await uploadProductImage(targetAsset);
         if (uploadRes && uploadRes.success) {
           const finalPath = uploadRes.path || uploadRes.url;
+          const fullUrl = uploadRes.url || finalPath;
           setImageUrl(finalPath);
-          setPreviewUri(uploadRes.url || finalPath);
+          setPreviewUri(resolveMediaUrl(fullUrl) || fullUrl);
           setUploadError(null);
         } else {
           setImageUrl('');
@@ -244,6 +353,215 @@ export const AddProductScreen = ({ navigation, route }) => {
     setImageUrl('');
     setPreviewUri('');
     setUploadError(null);
+  };
+
+  const handleOpenAdjuster = () => {
+    if (!activePreviewUri) return;
+    setAdjustZoom(1.0);
+    setAdjustPan({ x: 0, y: 0 });
+    panRef.current = { x: 0, y: 0 };
+    setAdjustRotate(0);
+    setShowAdjustModal(true);
+  };
+
+  const handleResetAdjuster = () => {
+    setAdjustZoom(1.0);
+    setAdjustPan({ x: 0, y: 0 });
+    panRef.current = { x: 0, y: 0 };
+    setAdjustRotate(0);
+  };
+
+  const handleRotateClockwise = () => {
+    setAdjustRotate((prev) => (prev + 90) % 360);
+  };
+
+  const handleZoomChange = (delta) => {
+    setAdjustZoom((prev) => {
+      const next = Math.round((prev + delta) * 10) / 10;
+      return Math.max(1.0, Math.min(3.0, next));
+    });
+  };
+
+  const handleApplyAdjustment = async () => {
+    const targetSource = activePreviewUri;
+    if (!targetSource) {
+      setShowAdjustModal(false);
+      return;
+    }
+
+    setIsApplyingAdjust(true);
+    try {
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        const canvas = document.createElement('canvas');
+        const OUTPUT_SIZE = 1000;
+        canvas.width = OUTPUT_SIZE;
+        canvas.height = OUTPUT_SIZE;
+        const ctx = canvas.getContext('2d');
+
+        // Pure white background matching standard retail presentation
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+
+        const img = new window.Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('Could not load photo for adjustment.'));
+          img.src = targetSource;
+        });
+
+        // Calculate aspect-contained scale for 1000px square relative to 280px viewport
+        const VIEWPORT_SIZE = 280;
+        const scaleRatio = OUTPUT_SIZE / VIEWPORT_SIZE;
+
+        let dw, dh;
+        const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height);
+        if (aspect >= 1) {
+          dw = OUTPUT_SIZE;
+          dh = OUTPUT_SIZE / aspect;
+        } else {
+          dh = OUTPUT_SIZE;
+          dw = OUTPUT_SIZE * aspect;
+        }
+
+        ctx.save();
+        ctx.translate(OUTPUT_SIZE / 2 + adjustPan.x * scaleRatio, OUTPUT_SIZE / 2 + adjustPan.y * scaleRatio);
+        ctx.rotate((adjustRotate * Math.PI) / 180);
+        ctx.scale(adjustZoom, adjustZoom);
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+        if (!blob) throw new Error('Canvas export failed');
+
+        setIsUploadingImage(true);
+        setUploadError(null);
+        setShowAdjustModal(false);
+
+        if (uploadProductImage) {
+          const uploadRes = await uploadProductImage(blob);
+          if (uploadRes && uploadRes.success) {
+            const finalPath = uploadRes.path || uploadRes.url;
+            const fullUrl = uploadRes.url || finalPath;
+            setImageUrl(finalPath);
+            setPreviewUri(resolveMediaUrl(fullUrl) || fullUrl);
+            setUploadError(null);
+          } else {
+            setUploadError(uploadRes?.message || 'Failed to upload adjusted photo. Tap retry.');
+          }
+        }
+      } else {
+        // Native Android / iOS implementation using expo-image-manipulator
+        const actions = [];
+
+        // 1. Rotation action
+        if (adjustRotate && adjustRotate % 360 !== 0) {
+          actions.push({ rotate: (adjustRotate % 360 + 360) % 360 });
+        }
+
+        // 2. Crop action if zoomed or panned
+        if (adjustZoom > 1.0 || adjustPan.x !== 0 || adjustPan.y !== 0) {
+          let imgW = selectedAsset?.width;
+          let imgH = selectedAsset?.height;
+
+          if (!imgW || !imgH) {
+            const size = await new Promise((resolve, reject) => {
+              Image.getSize(targetSource, (w, h) => resolve({ width: w, height: h }), reject);
+            }).catch(() => null);
+            if (size) {
+              imgW = size.width;
+              imgH = size.height;
+            }
+          }
+
+          if (imgW && imgH) {
+            const isFlipped = adjustRotate % 180 !== 0;
+            const curW = isFlipped ? imgH : imgW;
+            const curH = isFlipped ? imgW : imgH;
+
+            const VIEWPORT = 260;
+            let dispW, dispH;
+            if (curW >= curH) {
+              dispW = VIEWPORT;
+              dispH = VIEWPORT * (curH / curW);
+            } else {
+              dispH = VIEWPORT;
+              dispW = VIEWPORT * (curW / curH);
+            }
+
+            const scale = curW / (dispW * adjustZoom);
+            let originX = Math.round(curW / 2 - (VIEWPORT / 2 + adjustPan.x) * scale);
+            let originY = Math.round(curH / 2 - (VIEWPORT / 2 + adjustPan.y) * scale);
+            let cropW = Math.round(VIEWPORT * scale);
+            let cropH = Math.round(VIEWPORT * scale);
+
+            originX = Math.max(0, Math.min(curW - 1, originX));
+            originY = Math.max(0, Math.min(curH - 1, originY));
+            cropW = Math.max(10, Math.min(cropW, curW - originX));
+            cropH = Math.max(10, Math.min(cropH, curH - originY));
+
+            actions.push({
+              crop: {
+                originX,
+                originY,
+                width: cropW,
+                height: cropH
+              }
+            });
+          }
+        }
+
+        setIsUploadingImage(true);
+        setUploadError(null);
+        setShowAdjustModal(false);
+
+        let targetToUpload = selectedAsset || { uri: targetSource };
+
+        if (actions.length > 0) {
+          let sourceUri = targetSource;
+          if (sourceUri.startsWith('http://') || sourceUri.startsWith('https://')) {
+            const dl = await FileSystem.downloadAsync(
+              sourceUri,
+              FileSystem.cacheDirectory + `temp_adj_${Date.now()}.jpg`
+            );
+            sourceUri = dl.uri;
+          }
+
+          const manipResult = await manipulateAsync(
+            sourceUri,
+            actions,
+            { compress: 0.92, format: SaveFormat.JPEG }
+          );
+          targetToUpload = {
+            uri: manipResult.uri,
+            width: manipResult.width,
+            height: manipResult.height,
+            mimeType: 'image/jpeg',
+            name: `adjusted_${Date.now()}.jpg`
+          };
+        }
+
+        if (uploadProductImage) {
+          const uploadRes = await uploadProductImage(targetToUpload);
+          if (uploadRes && uploadRes.success) {
+            const finalPath = uploadRes.path || uploadRes.url;
+            const fullUrl = uploadRes.url || finalPath;
+            setImageUrl(finalPath);
+            setPreviewUri(resolveMediaUrl(fullUrl) || fullUrl);
+            setUploadError(null);
+          } else {
+            setUploadError(uploadRes?.message || 'Failed to upload adjusted photo. Tap retry.');
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to apply photo adjustments:', err);
+      setUploadError('Could not apply photo adjustments: ' + err.message);
+      setShowAdjustModal(false);
+    } finally {
+      setIsApplyingAdjust(false);
+      setIsUploadingImage(false);
+    }
   };
 
   const numPrice = parseFloat(price);
@@ -417,6 +735,14 @@ export const AddProductScreen = ({ navigation, route }) => {
       }
 
       if (res && res.success !== false) {
+        if (res.product) {
+          const updatedImg = res.product.image || finalImage;
+          setImageUrl(updatedImg);
+          setPreviewUri(resolveMediaUrl(updatedImg) || updatedImg);
+          if (fetchedProduct) {
+            setFetchedProduct(res.product);
+          }
+        }
         showFeedback(
           isEditing ? 'Updated! ✨' : 'Success! 🌟',
           isEditing ? 'Product details updated successfully!' : 'New product published to customer app!',
@@ -448,7 +774,22 @@ export const AddProductScreen = ({ navigation, route }) => {
         ]}
       >
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            safeBlurActiveElement();
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+              try {
+                const u = new URL(window.location.href);
+                u.searchParams.delete('screen');
+                u.searchParams.delete('productId');
+                window.history.pushState({}, '', u.toString());
+              } catch {}
+            }
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('PartnerTabs', { screen: 'Inventory' });
+            }
+          }}
           style={styles.glassBackBtn}
           activeOpacity={0.7}
         >
@@ -779,10 +1120,21 @@ export const AddProductScreen = ({ navigation, route }) => {
               </View>
               <Text style={styles.fieldHelper}>Choose a photo from your device (JPG, PNG, WEBP up to 5 MB)</Text>
 
-              {previewUri ? (
+              {activePreviewUri ? (
                 <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: previewUri }} style={styles.imagePreviewLarge} resizeMode="cover" />
+                  <View style={styles.imagePreviewSquareBox}>
+                    <Image source={{ uri: activePreviewUri }} style={styles.imagePreviewContained} resizeMode="contain" />
+                  </View>
                   <View style={styles.imageOverlayActions}>
+                    <TouchableOpacity
+                      style={styles.imageActionBtn}
+                      onPress={handleOpenAdjuster}
+                      disabled={isUploadingImage}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="crop-outline" size={15} color="#ea580c" />
+                      <Text style={[styles.imageActionBtnText, { color: '#ea580c' }]}>Adjust Photo</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.imageActionBtn}
                       onPress={handlePickImage}
@@ -790,7 +1142,7 @@ export const AddProductScreen = ({ navigation, route }) => {
                       activeOpacity={0.8}
                     >
                       <Ionicons name="refresh-outline" size={15} color="#0f172a" />
-                      <Text style={styles.imageActionBtnText}>Replace Photo</Text>
+                      <Text style={styles.imageActionBtnText}>Replace</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.imageActionBtn, styles.imageRemoveBtn]}
@@ -805,7 +1157,7 @@ export const AddProductScreen = ({ navigation, route }) => {
                   {isUploadingImage && (
                     <View style={styles.uploadingOverlay}>
                       <ActivityIndicator size="small" color="#ffffff" />
-                      <Text style={styles.uploadingText}>Uploading photo...</Text>
+                      <Text style={styles.uploadingText}>Uploading to durable storage...</Text>
                     </View>
                   )}
                 </View>
@@ -827,7 +1179,7 @@ export const AddProductScreen = ({ navigation, route }) => {
                         <Ionicons name="image-outline" size={26} color="#ea580c" />
                       </View>
                       <Text style={styles.uploadDropZoneTitle}>Choose Photo from Device</Text>
-                      <Text style={styles.uploadDropZoneSub}>Tap to select from phone gallery or computer</Text>
+                      <Text style={styles.uploadDropZoneSub}>Tap to select portrait, square or landscape photo</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -846,6 +1198,62 @@ export const AddProductScreen = ({ navigation, route }) => {
                   </TouchableOpacity>
                 </View>
               ) : null}
+
+              {/* Live Customer Preview */}
+              <View style={styles.customerPreviewContainer}>
+                <View style={styles.customerPreviewHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="eye-outline" size={15} color="#16a34a" />
+                    <Text style={styles.customerPreviewHeading}>Live Customer Card Preview</Text>
+                  </View>
+                  <Text style={styles.customerPreviewSub}>Live appearance in customer feed & search</Text>
+                </View>
+
+                <View style={styles.customerCardWrapper}>
+                  <View style={styles.mockCustomerCard}>
+                    <View style={styles.mockCardImageContainer}>
+                      {activePreviewUri ? (
+                        <Image source={{ uri: activePreviewUri }} style={styles.mockCardImage} resizeMode="contain" />
+                      ) : (
+                        <View style={styles.mockCardImagePlaceholder}>
+                          <Ionicons name="image-outline" size={28} color="#94a3b8" />
+                          <Text style={styles.mockCardImagePlaceholderText}>Product Photo</Text>
+                        </View>
+                      )}
+                      {discountPercent > 0 && (
+                        <View style={styles.mockCardDiscountBadge}>
+                          <Text style={styles.mockCardDiscountText}>{discountPercent}% OFF</Text>
+                        </View>
+                      )}
+                      {isFoodCategory && (
+                        <View style={styles.mockCardVegBadge}>
+                          <View style={[styles.vegDotSmall, { backgroundColor: isVeg ? '#16a34a' : '#dc2626' }]} />
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.mockCardDetails}>
+                      <Text style={styles.mockCardTitle} numberOfLines={2}>
+                        {name.trim() || 'Product Name'}
+                      </Text>
+                      <Text style={styles.mockCardUnit} numberOfLines={1}>
+                        {unit.trim() || '1 pack'}
+                      </Text>
+                      <View style={styles.mockCardFooter}>
+                        <View style={styles.mockCardPriceColumn}>
+                          <Text style={styles.mockCardPrice}>₹{price ? price : '0'}</Text>
+                          {numMrp > numPrice && (
+                            <Text style={styles.mockCardMrp}>₹{mrp}</Text>
+                          )}
+                        </View>
+                        <View style={styles.mockCardAddBtn}>
+                          <Text style={styles.mockCardAddBtnText}>ADD</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
             </View>
 
             {/* Description */}
@@ -1043,6 +1451,124 @@ export const AddProductScreen = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Adjust Photo Modal */}
+      <Modal
+        visible={showAdjustModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => !isApplyingAdjust && setShowAdjustModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.adjusterModalContent}>
+            <View style={styles.adjusterModalHeader}>
+              <View>
+                <Text style={styles.adjusterModalTitle}>Adjust Product Photo</Text>
+                <Text style={styles.adjusterModalSub}>Drag to reposition • Zoom or rotate to fit</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowAdjustModal(false)}
+                disabled={isApplyingAdjust}
+                style={styles.adjusterCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Interactive Viewport */}
+            <View style={styles.adjusterViewportOuter}>
+              <View {...panResponder.panHandlers} style={styles.adjusterViewport}>
+                {activePreviewUri ? (
+                  <Image
+                    source={{ uri: activePreviewUri }}
+                    style={[
+                      styles.adjusterImage,
+                      {
+                        transform: [
+                          { translateX: adjustPan.x },
+                          { translateY: adjustPan.y },
+                          { scale: adjustZoom },
+                          { rotate: `${adjustRotate}deg` }
+                        ]
+                      }
+                    ]}
+                    resizeMode="contain"
+                  />
+                ) : null}
+              </View>
+              <Text style={styles.adjusterDragHint}>✋ Touch or click & drag to reposition</Text>
+            </View>
+
+            {/* Controls Bar: Zoom, Rotate & Reset */}
+            <View style={styles.adjusterControlsRow}>
+              {/* Zoom Controls */}
+              <View style={styles.adjusterControlGroup}>
+                <Text style={styles.controlLabel}>Zoom ({Math.round(adjustZoom * 100)}%)</Text>
+                <View style={styles.zoomButtonsRow}>
+                  <TouchableOpacity
+                    style={[styles.zoomStepBtn, adjustZoom <= 1.0 && styles.controlBtnDisabled]}
+                    onPress={() => handleZoomChange(-0.1)}
+                    disabled={adjustZoom <= 1.0}
+                  >
+                    <Ionicons name="remove" size={18} color="#0f172a" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.zoomStepBtn, adjustZoom >= 3.0 && styles.controlBtnDisabled]}
+                    onPress={() => handleZoomChange(0.1)}
+                    disabled={adjustZoom >= 3.0}
+                  >
+                    <Ionicons name="add" size={18} color="#0f172a" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Rotate Control */}
+              <View style={styles.adjusterControlGroup}>
+                <Text style={styles.controlLabel}>Rotate ({adjustRotate}°)</Text>
+                <TouchableOpacity style={styles.rotateBtn} onPress={handleRotateClockwise}>
+                  <Ionicons name="sync-outline" size={18} color="#0f172a" />
+                  <Text style={styles.rotateBtnText}>+90°</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Reset Control */}
+              <View style={styles.adjusterControlGroup}>
+                <Text style={styles.controlLabel}>Revert</Text>
+                <TouchableOpacity style={styles.resetBtn} onPress={handleResetAdjuster}>
+                  <Ionicons name="reload-outline" size={16} color="#64748b" />
+                  <Text style={styles.resetBtnText}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.adjusterModalActions}>
+              <TouchableOpacity
+                style={styles.adjusterCancelBtn}
+                onPress={() => setShowAdjustModal(false)}
+                disabled={isApplyingAdjust}
+              >
+                <Text style={styles.adjusterCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.adjusterApplyBtn}
+                onPress={handleApplyAdjustment}
+                disabled={isApplyingAdjust}
+              >
+                {isApplyingAdjust ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#ffffff" />
+                    <Text style={styles.adjusterApplyText}>Apply & Save Photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1183,7 +1709,7 @@ export const InventoryScreen = ({ navigation }) => {
               <GlassCard key={itemId} style={styles.inventoryCard} showSheen={true}>
                 <View style={styles.invCardRow}>
                   {item.image ? (
-                    <Image source={{ uri: item.image }} style={styles.invThumb} />
+                    <Image source={{ uri: resolveMediaUrl(item.image) || item.image }} style={styles.invThumb} resizeMode="contain" />
                   ) : (
                     <View style={styles.invThumbFallback}>
                       <Ionicons name="basket-outline" size={24} color="#94a3b8" />
@@ -1264,6 +1790,15 @@ export const InventoryScreen = ({ navigation }) => {
                       style={styles.editListingBtn}
                       onPress={() => {
                         safeBlurActiveElement();
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          const pId = item.id || item._id || item.productId;
+                          try {
+                            const u = new URL(window.location.href);
+                            u.searchParams.set('screen', 'AddProduct');
+                            if (pId) u.searchParams.set('productId', pId);
+                            window.history.pushState({}, '', u.toString());
+                          } catch {}
+                        }
                         navigation.navigate('AddProduct', { product: item });
                       }}
                       activeOpacity={0.8}
@@ -1719,6 +2254,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     position: 'relative'
   },
+  imagePreviewSquareBox: {
+    width: '100%',
+    aspectRatio: 1,
+    maxHeight: 280,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10
+  },
+  imagePreviewContained: {
+    width: '100%',
+    height: '100%'
+  },
   imagePreviewLarge: {
     width: '100%',
     height: 160,
@@ -1818,6 +2366,314 @@ const styles = StyleSheet.create({
     color: '#ffffff'
   },
 
+  // LIVE CUSTOMER PREVIEW STYLES
+  customerPreviewContainer: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  customerPreviewHeader: {
+    marginBottom: 10
+  },
+  customerPreviewHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a'
+  },
+  customerPreviewSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2
+  },
+  customerCardWrapper: {
+    alignItems: 'center',
+    paddingVertical: 4
+  },
+  mockCustomerCard: {
+    width: 170,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3
+  },
+  mockCardImageContainer: {
+    width: '100%',
+    height: 120,
+    backgroundColor: '#ffffff',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6
+  },
+  mockCardImage: {
+    width: '100%',
+    height: '100%'
+  },
+  mockCardImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
+  },
+  mockCardImagePlaceholderText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8'
+  },
+  mockCardDiscountBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  mockCardDiscountText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#ffffff'
+  },
+  mockCardVegBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 14,
+    height: 14,
+    borderWidth: 1.5,
+    borderColor: '#16a34a',
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff'
+  },
+  vegDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  mockCardDetails: {
+    padding: 10
+  },
+  mockCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: 16,
+    height: 32
+  },
+  mockCardUnit: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    marginBottom: 6
+  },
+  mockCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2
+  },
+  mockCardPriceColumn: {
+    flexDirection: 'column'
+  },
+  mockCardPrice: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a'
+  },
+  mockCardMrp: {
+    fontSize: 10,
+    color: '#94a3b8',
+    textDecorationLine: 'line-through'
+  },
+  mockCardAddBtn: {
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8
+  },
+  mockCardAddBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#ffffff'
+  },
+
+  // ADJUST PHOTO MODAL STYLES
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16
+  },
+  adjusterModalContent: {
+    width: '100%',
+    maxWidth: 460,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 10
+  },
+  adjusterModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  adjusterModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a'
+  },
+  adjusterModalSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2
+  },
+  adjusterCloseBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9'
+  },
+  adjusterViewportOuter: {
+    alignItems: 'center',
+    marginVertical: 10
+  },
+  adjusterViewport: {
+    width: 260,
+    height: 260,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#ea580c',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative'
+  },
+  adjusterImage: {
+    width: 250,
+    height: 250
+  },
+  adjusterDragHint: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 6
+  },
+  adjusterControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 14,
+    gap: 8
+  },
+  adjusterControlGroup: {
+    alignItems: 'center',
+    gap: 4
+  },
+  controlLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+    textTransform: 'uppercase'
+  },
+  zoomButtonsRow: {
+    flexDirection: 'row',
+    gap: 4
+  },
+  zoomStepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  controlBtnDisabled: {
+    opacity: 0.4
+  },
+  rotateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1'
+  },
+  rotateBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f172a'
+  },
+  resetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1'
+  },
+  resetBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b'
+  },
+  adjusterModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10
+  },
+  adjusterCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9'
+  },
+  adjusterCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b'
+  },
+  adjusterApplyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#ea580c'
+  },
+  adjusterApplyText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff'
+  },
+
   // INVENTORY STYLES
   filterTabsContainer: {
     paddingHorizontal: 16,
@@ -1881,7 +2737,8 @@ const styles = StyleSheet.create({
   invThumb: {
     width: 54,
     height: 54,
-    borderRadius: 12
+    borderRadius: 12,
+    backgroundColor: '#ffffff'
   },
   invThumbFallback: {
     width: 54,

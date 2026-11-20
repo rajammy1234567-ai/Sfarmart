@@ -407,11 +407,29 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     gap: 12
   },
+  itemImageContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff'
+  },
+  itemImageContainerGrocery: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9'
+  },
   itemImage: {
     width: 60,
     height: 60,
     borderRadius: 12,
     resizeMode: 'cover'
+  },
+  itemImageGrocery: {
+    width: '90%',
+    height: '90%'
   },
   itemImagePlaceholder: {
     width: 60,
