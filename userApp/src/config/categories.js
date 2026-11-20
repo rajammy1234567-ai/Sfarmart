@@ -18,6 +18,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#16a34a',
     bgColor: '#f0fdf4',
     borderColor: '#bbf7d0',
+    curvedAccentColor: '#bbf7d0',
     sortOrder: 1,
     aliases: ['fresh-vegetables', 'fruits-vegetables', 'fruits-and-vegetables', 'staging-produce']
   },
@@ -32,6 +33,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#0284c7',
     bgColor: '#f0f9ff',
     borderColor: '#bae6fd',
+    curvedAccentColor: '#bae6fd',
     sortOrder: 2,
     aliases: ['dairy', 'milk-butter', 'bread-eggs', 'dairy-bread-eggs']
   },
@@ -46,6 +48,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#d97706',
     bgColor: '#fffbeb',
     borderColor: '#fde68a',
+    curvedAccentColor: '#fde68a',
     sortOrder: 3,
     aliases: ['atta-flours', 'rice-grains', 'dals-pulses', 'grains']
   },
@@ -60,6 +63,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#ea580c',
     bgColor: '#fff7ed',
     borderColor: '#fed7aa',
+    curvedAccentColor: '#fed7aa',
     sortOrder: 4,
     aliases: ['oils-ghee', 'spices', 'masala', 'cooking-oils']
   },
@@ -74,6 +78,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#e11d48',
     bgColor: '#fff1f2',
     borderColor: '#fecdd3',
+    curvedAccentColor: '#fecdd3',
     sortOrder: 5,
     aliases: ['homerestro', 'home-restro', 'thali', 'punjabi-thali', 'parathas-rolls']
   },
@@ -88,6 +93,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#ec4899',
     bgColor: '#fdf2f8',
     borderColor: '#fbcfe8',
+    curvedAccentColor: '#fbcfe8',
     sortOrder: 6,
     aliases: ['desi-mithai', 'bakery', 'sweets', 'cakes-pastries']
   },
@@ -102,6 +108,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#b45309',
     bgColor: '#fffbeb',
     borderColor: '#fde68a',
+    curvedAccentColor: '#fde68a',
     sortOrder: 7,
     aliases: ['namkeen', 'chips', 'munchies', 'healthy-snacks']
   },
@@ -116,6 +123,7 @@ export const CANONICAL_BROWSE_CATEGORIES = [
     accentColor: '#0891b2',
     bgColor: '#ecfeff',
     borderColor: '#a5f3fc',
+    curvedAccentColor: '#a5f3fc',
     sortOrder: 8,
     aliases: ['fresh-juices', 'soft-drinks', 'drinks', 'juices']
   }
@@ -212,6 +220,8 @@ export const resolveBrowseCategories = (apiCategories = []) => {
     const match = findCanonicalCategoryMatch(apiCat);
 
     if (match) {
+      const resolvedImage = (typeof apiCat.image === 'string' && apiCat.image.trim()) ? apiCat.image.trim() : '';
+
       return {
         ...match,
         // Stable React and record identity: use real database _id
@@ -225,6 +235,8 @@ export const resolveBrowseCategories = (apiCategories = []) => {
         slug: apiCat.slug || match.canonicalSlug,
         type: apiCat.type || match.type,
         icon: apiCat.icon || match.icon,
+        image: resolvedImage,
+        curvedAccentColor: match.curvedAccentColor || '#dcfce7',
         vectorIcon: match.vectorIcon,
         accentColor: match.accentColor,
         bgColor: match.bgColor,
@@ -249,6 +261,7 @@ export const resolveBrowseCategories = (apiCategories = []) => {
       shortName: apiCat.name || 'Other',
       type: apiCat.type || 'GROCERY',
       icon: apiCat.icon || '🛍️',
+      image: apiCat.image || '',
       vectorIcon: 'grid-outline',
       accentColor: '#64748b',
       bgColor: '#f8fafc',

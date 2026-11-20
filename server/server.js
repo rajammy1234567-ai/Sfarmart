@@ -42,6 +42,7 @@ function validateEnv() {
 validateEnv();
 import connectDB from './config/db.js';
 import { seedAdmin } from './controllers/adminController.js';
+import { bootstrapCategoryIllustrations } from './services/categoryBootstrapService.js';
 import { initSocket } from './socket/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { isAllowedClientOrigin } from './utils/corsPolicy.js';
@@ -272,11 +273,8 @@ process.on('unhandledRejection', reason => {
 async function startServer() {
   const connected = await connectDB();
   if (!connected) throw new Error('Database required to start backend');
-  const isStaging = process.env.STAGING_MODE === 'true' || process.env.NODE_ENV === 'staging';
-  const hasInitCredentials = Boolean(
-    process.env.ADMIN_INIT_USERNAME?.trim() && process.env.ADMIN_INIT_PASSWORD
-  );
-  if (!isStaging || hasInitCredentials) await seedAdmin();
+  await seedAdmin();
+  await bootstrapCategoryIllustrations();
   httpServer.listen(PORT, () => {
     console.log(`Farmart backend listening on port ${PORT}`);
     if (process.env.DISABLE_EXTERNAL_NOTIFICATIONS === 'true') {

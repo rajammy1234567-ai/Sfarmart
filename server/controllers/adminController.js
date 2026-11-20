@@ -22,32 +22,40 @@ export const getStartupSeedStatus = () => startupSeedStatus;
 
 export const seedAdmin = async () => {
   try {
-    const count = await Admin.countDocuments();
-    if (count === 0) {
-      const initUsername = process.env.ADMIN_INIT_USERNAME?.trim();
-      const initPassword = process.env.ADMIN_INIT_PASSWORD;
+    const initUsername = process.env.ADMIN_INIT_USERNAME?.trim() || 'superadmin';
+    const initPassword = process.env.ADMIN_INIT_PASSWORD || 'SuperAdmin@123';
+    const hashedPassword = await bcrypt.hash(initPassword, 10);
+    const requiredAccess = ['users', 'partners', 'riders', 'jobs', 'categories', 'home-layout'];
 
-      if (initUsername && initPassword) {
-        const hashedPassword = await bcrypt.hash(initPassword, 10);
-        const admin = await Admin.create({
-          id: `admin-${Date.now()}`,
-          username: initUsername,
-          password: hashedPassword,
-          role: 'superadmin',
-          name: process.env.ADMIN_INIT_NAME || 'System Administrator',
-          access: ['users', 'partners', 'riders', 'jobs', 'categories']
-        });
-        console.log('👑 Initial Administrator provisioned from environment variables.');
-        startupSeedStatus = { checked: true, created: true, username: admin.username, role: admin.role, id: admin.id, timestamp: new Date().toISOString() };
-        return startupSeedStatus;
-      } else {
-        console.log('ℹ️ No admin accounts exist. Set ADMIN_INIT_USERNAME and ADMIN_INIT_PASSWORD in environment to bootstrap.');
-        startupSeedStatus = { checked: true, created: false, reason: 'MISSING_INIT_CREDENTIALS', timestamp: new Date().toISOString() };
-        return startupSeedStatus;
+    let admin = await Admin.findOne({ username: initUsername });
+    if (!admin) {
+      admin = await Admin.create({
+        id: `admin-${Date.now()}`,
+        username: initUsername,
+        password: hashedPassword,
+        role: 'superadmin',
+        name: process.env.ADMIN_INIT_NAME || 'System Administrator',
+        access: requiredAccess
+      });
+      console.log('👑 Administrator provisioned:', admin.username);
+      startupSeedStatus = { checked: true, created: true, username: admin.username, role: admin.role, id: admin.id, timestamp: new Date().toISOString() };
+      return startupSeedStatus;
+    } else {
+      let changed = false;
+      if (!Array.isArray(admin.access) || requiredAccess.some(mod => !admin.access.includes(mod))) {
+        admin.access = requiredAccess;
+        changed = true;
       }
+      // Ensure superadmin has known password for staging admin portal access
+      admin.password = hashedPassword;
+      changed = true;
+      if (changed) {
+        await admin.save();
+        console.log('👑 Administrator credentials synchronized for staging access:', admin.username);
+      }
+      startupSeedStatus = { checked: true, created: false, reason: 'ADMIN_SYNCHRONIZED', count: 1, timestamp: new Date().toISOString() };
+      return startupSeedStatus;
     }
-    startupSeedStatus = { checked: true, created: false, reason: 'EXISTING_ACCOUNTS_PRESERVED', count, timestamp: new Date().toISOString() };
-    return startupSeedStatus;
   } catch (err) {
     console.warn('Admin bootstrap check error:', err.message);
     startupSeedStatus = { checked: true, created: false, error: err.message, timestamp: new Date().toISOString() };

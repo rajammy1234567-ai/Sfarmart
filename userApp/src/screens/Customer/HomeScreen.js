@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  Dimensions
+  Dimensions,
+  Animated,
+  AccessibilityInfo
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,15 +23,145 @@ import { useCart } from '../../context/CartContext';
 import { ClearCartModal } from '../../components/ClearCartModal';
 import { colors } from '../../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeImage, isValidImageUri } from '../../components/common/SafeImage';
+import { SafeImage, isValidImageUri, resolveMediaUrl } from '../../components/common/SafeImage';
 import { resolveBrowseCategories } from '../../config/categories';
 import { getScrollBottomPadding, getStickyCartBottom } from '../../theme/layout';
 import { useApp } from '../../context/AppContext';
 import storage from '../../services/storage';
 import { distanceKm, validCoordinates } from '../../utils/trackingUtils';
 
+/**
+ * CategoryGridTile – 3D Quick-Commerce Category Card
+ * Features:
+ * - Rounded white card with layered bottom edge and subtle shadow
+ * - Curved pastel color accent at bottom (per category)
+ * - Large centered soft 3D product illustration (contain)
+ * - Small circular arrow badge at bottom-right
+ * - Bold dark real text label
+ * - Gentle press bounce animation respecting reduced motion
+ */
+const CategoryGridTile = React.memo(({ cat, isSelected, onPress, reduceMotion }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (!reduceMotion) {
+      Animated.spring(scaleAnim, {
+        toValue: 0.93,
+        friction: 8,
+        tension: 100,
+        useNativeDriver: Platform.OS !== 'web'
+      }).start();
+    }
+  };
+
+  const handlePressOut = () => {
+    if (!reduceMotion) {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 120,
+        useNativeDriver: Platform.OS !== 'web'
+      }).start();
+    }
+  };
+
+  const resolvedUri = cat.image ? resolveMediaUrl(cat.image) : null;
+  const imageSource = (resolvedUri && isValidImageUri(resolvedUri))
+    ? (typeof resolvedUri === 'number' ? resolvedUri : { uri: resolvedUri })
+    : null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.categoryGridCol,
+        { transform: [{ scale: scaleAnim }] }
+      ]}
+    >
+      <TouchableOpacity
+        style={styles.categoryTileTouch}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={`${cat.name} category tile`}
+        testID={`category-grid-tile-${cat.slug || cat._id}`}
+      >
+        <View
+          style={[
+            styles.categoryCardWhite,
+            cat.borderColor ? { borderColor: cat.borderColor } : null,
+            isSelected && styles.categoryCardActive
+          ]}
+        >
+          {/* Curved Pastel Bottom Accent */}
+          <View
+            style={[
+              styles.curvedBottomAccent,
+              { backgroundColor: cat.curvedAccentColor || cat.bgColor || '#dcfce7' },
+              isSelected && { opacity: 1 }
+            ]}
+          />
+
+          {/* Large Centred Soft 3D Illustration */}
+          <View style={styles.category3DImageContainer}>
+            {imageSource ? (
+              <SafeImage
+                source={imageSource}
+                style={styles.category3DImage}
+                resizeMode="contain"
+                placeholderBg="transparent"
+                placeholderIcon={cat.vectorIcon || 'leaf-outline'}
+                placeholderIconSize={26}
+              />
+            ) : cat.vectorIcon ? (
+              <View style={styles.categoryIconFallback}>
+                <Ionicons
+                  name={cat.vectorIcon}
+                  size={26}
+                  color={cat.accentColor || '#16a34a'}
+                />
+              </View>
+            ) : (
+              <View style={styles.categoryIconFallback}>
+                <Text style={styles.categoryIconEmoji}>{cat.icon || '🥦'}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Small Circular Arrow Badge */}
+          <View
+            style={[
+              styles.cardArrowCircle,
+              isSelected && styles.cardArrowCircleActive
+            ]}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={9}
+              color={isSelected ? '#ffffff' : (cat.accentColor || '#475569')}
+            />
+          </View>
+        </View>
+
+        {/* Bold Dark Real Text Label */}
+        <Text
+          style={[
+            styles.categoryLabelDark,
+            isSelected && styles.categoryLabelActive
+          ]}
+          numberOfLines={2}
+        >
+          {cat.shortName || cat.name}
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+
 export const HomeScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const [reduceMotion, setReduceMotion] = useState(false);
   const [categories, setCategories] = useState(() => resolveBrowseCategories([]));
   const [vendors, setVendors] = useState([]);
   const [products, setProducts] = useState([]);
@@ -80,6 +212,24 @@ export const HomeScreen = ({ navigation, route }) => {
     resolveLocation();
     return () => { isMounted = false; };
   }, [userProfile?.lat, userProfile?.lng, userProfile?.address]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (AccessibilityInfo?.isReduceMotionEnabled) {
+      AccessibilityInfo.isReduceMotionEnabled()
+        .then((enabled) => { if (isMounted) setReduceMotion(Boolean(enabled)); })
+        .catch(() => {});
+    }
+    const sub = AccessibilityInfo?.addEventListener
+      ? AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+          if (isMounted) setReduceMotion(Boolean(enabled));
+        })
+      : null;
+    return () => {
+      isMounted = false;
+      if (sub?.remove) sub.remove();
+    };
+  }, []);
 
   const loadHomeData = useCallback(async (isPullToRefresh = false) => {
     if (isPullToRefresh) {
@@ -469,63 +619,8 @@ export const HomeScreen = ({ navigation, route }) => {
               </View>
             )}
           </View>
-        ) : selectedCategory !== 'all' ? (
-          /* ================== FILTERED CATEGORY VIEW ================== */
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <View>
-                <Text style={styles.sectionHeading}>
-                  {categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name || 'Category Products'}
-                </Text>
-                <Text style={styles.sectionSubHeading}>
-                  {displayedProducts.length} item{displayedProducts.length === 1 ? '' : 's'} available
-                </Text>
-              </View>
-              {displayedProducts.length > 1 && (
-                <View style={styles.sortPillGroup}>
-                  <TouchableOpacity
-                    style={[styles.sortPill, sortBy === 'price_low' && styles.sortPillActive]}
-                    onPress={() => setSortBy(sortBy === 'price_low' ? 'default' : 'price_low')}
-                  >
-                    <Text style={[styles.sortPillText, sortBy === 'price_low' && styles.sortPillTextActive]}>₹ Low</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.sortPill, sortBy === 'price_high' && styles.sortPillActive]}
-                    onPress={() => setSortBy(sortBy === 'price_high' ? 'default' : 'price_high')}
-                  >
-                    <Text style={[styles.sortPillText, sortBy === 'price_high' && styles.sortPillTextActive]}>₹ High</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-
-            {displayedProducts.length === 0 ? (
-              <View style={styles.honestEmptyBox}>
-                <Ionicons name="cube-outline" size={36} color="#94a3b8" />
-                <Text style={styles.honestEmptyTitle}>No items currently in this category</Text>
-                <Text style={styles.honestEmptySub}>Tap All above to browse all products.</Text>
-                <TouchableOpacity
-                  style={styles.filterResetInlineBtn}
-                  onPress={() => setSelectedCategory('all')}
-                >
-                  <Text style={styles.filterResetInlineBtnText}>Show All Products</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.productsGrid}>
-                {displayedProducts.map((product) => (
-                  <View key={product._id} style={styles.productCol}>
-                    <ProductCard
-                      product={product}
-                      onPress={() => navigation.navigate('ProductDetails', { product })}
-                    />
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
         ) : (
-          /* ================== MAIN HOME FEED ================== */
+          /* ================== MAIN CONTENT FEED ================== */
           <>
             {/* 1. Dynamic Merchandising Banners Carousel (Rendered only if backend has active banners) */}
             {banners.length > 0 && (
@@ -564,7 +659,7 @@ export const HomeScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* 2. Compact 4-Column Category Grid (Blinkit style) */}
+            {/* 2. Compact 4-Column Category Grid (Soft 3D Claymorphic Blinkit Style) */}
             {filteredCategories.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeaderRow}>
@@ -578,47 +673,79 @@ export const HomeScreen = ({ navigation, route }) => {
                 </View>
 
                 <View style={styles.blinkitCategoryGrid}>
-                  {filteredCategories.slice(0, 8).map((cat, idx) => (
-                    <TouchableOpacity
-                      key={String(cat._id || cat.slug || idx)}
-                      style={styles.blinkitCategoryTile}
-                      onPress={() => setSelectedCategory(cat.slug || cat._id)}
-                      activeOpacity={0.82}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${cat.name} category`}
-                    >
-                      <View
-                        style={[
-                          styles.blinkitIconCircle,
-                          cat.bgColor ? { backgroundColor: cat.bgColor } : null
-                        ]}
-                      >
-                        {isValidImageUri(cat.image) ? (
-                          <SafeImage
-                            source={{ uri: cat.image }}
-                            style={styles.blinkitCatImage}
-                            resizeMode="cover"
-                            placeholderIcon={cat.vectorIcon || 'leaf-outline'}
-                            placeholderIconSize={20}
-                          />
-                        ) : cat.vectorIcon ? (
-                          <Ionicons
-                            name={cat.vectorIcon}
-                            size={22}
-                            color={cat.accentColor || '#16a34a'}
-                          />
-                        ) : (
-                          <Text style={styles.blinkitIconEmoji}>{cat.icon || '🥦'}</Text>
-                        )}
-                      </View>
-                      <Text style={styles.blinkitCategoryLabel} numberOfLines={2}>
-                        {cat.shortName || cat.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {filteredCategories.slice(0, 8).map((cat, idx) => {
+                    const isSelected = selectedCategory === (cat.slug || cat._id);
+                    return (
+                      <CategoryGridTile
+                        key={String(cat._id || cat.slug || idx)}
+                        cat={cat}
+                        isSelected={isSelected}
+                        reduceMotion={reduceMotion}
+                        onPress={() => setSelectedCategory(isSelected ? 'all' : (cat.slug || cat._id))}
+                      />
+                    );
+                  })}
                 </View>
               </View>
             )}
+
+            {/* 3. Filtered Category View or Curated Sections */}
+            {selectedCategory !== 'all' ? (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeaderRow}>
+                  <View>
+                    <Text style={styles.sectionHeading}>
+                      {categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name || 'Category Products'}
+                    </Text>
+                    <Text style={styles.sectionSubHeading}>
+                      {displayedProducts.length} item{displayedProducts.length === 1 ? '' : 's'} available
+                    </Text>
+                  </View>
+                  {displayedProducts.length > 1 && (
+                    <View style={styles.sortPillGroup}>
+                      <TouchableOpacity
+                        style={[styles.sortPill, sortBy === 'price_low' && styles.sortPillActive]}
+                        onPress={() => setSortBy(sortBy === 'price_low' ? 'default' : 'price_low')}
+                      >
+                        <Text style={[styles.sortPillText, sortBy === 'price_low' && styles.sortPillTextActive]}>₹ Low</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.sortPill, sortBy === 'price_high' && styles.sortPillActive]}
+                        onPress={() => setSortBy(sortBy === 'price_high' ? 'default' : 'price_high')}
+                      >
+                        <Text style={[styles.sortPillText, sortBy === 'price_high' && styles.sortPillTextActive]}>₹ High</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {displayedProducts.length === 0 ? (
+                  <View style={styles.honestEmptyBox}>
+                    <Ionicons name="cube-outline" size={36} color="#94a3b8" />
+                    <Text style={styles.honestEmptyTitle}>No items currently in this category</Text>
+                    <Text style={styles.honestEmptySub}>Tap All above to browse all products.</Text>
+                    <TouchableOpacity
+                      style={styles.filterResetInlineBtn}
+                      onPress={() => setSelectedCategory('all')}
+                    >
+                      <Text style={styles.filterResetInlineBtnText}>Show All Products</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.productsGrid}>
+                    {displayedProducts.map((product) => (
+                      <View key={product._id} style={styles.productCol}>
+                        <ProductCard
+                          product={product}
+                          onPress={() => navigation.navigate('ProductDetails', { product })}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ) : (
+              <>
 
             {/* 3. Curated Product Sections (Promotional Rails from Backend) */}
             {homeSections.length > 0 ? (
@@ -724,6 +851,8 @@ export const HomeScreen = ({ navigation, route }) => {
                 <Text style={styles.honestEmptyTitle}>No products currently available</Text>
                 <Text style={styles.honestEmptySub}>Products added by partners will display here.</Text>
               </View>
+            )}
+              </>
             )}
           </>
         )}
@@ -983,52 +1112,116 @@ const styles = StyleSheet.create({
   sortPillTextActive: {
     color: '#ffffff'
   },
-  // Blinkit Compact 4-Column Category Grid
+  // Refined 4-Column Category Grid (Soft 3D Claymorphic Blinkit Style)
   blinkitCategoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    rowGap: 12
   },
-  blinkitCategoryTile: {
+  categoryGridCol: {
     width: '23%',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: 'rgba(15, 23, 42, 0.04)',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-    elevation: 1,
-    marginBottom: 6
+    marginBottom: 4
   },
-  blinkitIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f0fdf4',
+  categoryTileTouch: {
+    width: '100%',
+    alignItems: 'center'
+  },
+  categoryCardWhite: {
+    width: '100%',
+    aspectRatio: 1.0,
+    borderRadius: 15,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e8edf2',
+    borderBottomWidth: 3,
+    borderBottomColor: '#d1d9e2',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 6
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 4,
+    elevation: 2
   },
-  blinkitCatImage: {
+  categoryCardActive: {
+    borderColor: '#16a34a',
+    borderBottomColor: '#15803d',
+    borderBottomWidth: 3.5,
+    backgroundColor: '#ffffff',
+    shadowColor: 'rgba(22, 163, 74, 0.28)',
+    shadowRadius: 6,
+    elevation: 3
+  },
+  curvedBottomAccent: {
+    position: 'absolute',
+    bottom: -4,
+    left: -4,
+    right: -4,
+    height: '34%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    opacity: 0.82,
+    zIndex: 1
+  },
+  category3DImageContainer: {
+    width: '84%',
+    height: '84%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2
+  },
+  category3DImage: {
+    width: '100%',
+    height: '100%'
+  },
+  categoryIconFallback: {
     width: '100%',
     height: '100%',
-    borderRadius: 24
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  blinkitIconEmoji: {
-    fontSize: 24
+  categoryIconEmoji: {
+    fontSize: 28
   },
-  blinkitCategoryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1e293b',
+  cardArrowCircle: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 3,
+    borderWidth: 0.8,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
+    elevation: 1
+  },
+  cardArrowCircleActive: {
+    backgroundColor: '#16a34a',
+    borderColor: '#15803d'
+  },
+  categoryLabelDark: {
+    fontSize: Dimensions.get('window').width < 380 ? 10.5 : 11,
+    fontWeight: '800',
+    color: '#0f172a',
     textAlign: 'center',
-    lineHeight: 14
+    lineHeight: Dimensions.get('window').width < 380 ? 13 : 14.5,
+    marginTop: 6,
+    minHeight: 28
+  },
+  categoryLabelActive: {
+    color: '#15803d',
+    fontWeight: '900'
   },
   // Banners
   bannerCarouselContainer: {

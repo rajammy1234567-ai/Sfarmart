@@ -8,7 +8,11 @@ import {
   ArrowRightLeft,
   Building2,
   Calendar,
-  Sparkles
+  Sparkles,
+  Edit2,
+  Upload,
+  Image as ImageIcon,
+  Trash2
 } from 'lucide-react';
 import { adminFetch } from '../api';
 
@@ -36,6 +40,17 @@ export default function CategoriesPage() {
   const [targetMapId, setTargetMapId] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
+
+  // Category Edit & Photo Upload State
+  const [editCategory, setEditCategory] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editIcon, setEditIcon] = useState('🥦');
+  const [editImage, setEditImage] = useState('');
+  const [editSortOrder, setEditSortOrder] = useState('50');
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editHomeVisibility, setEditHomeVisibility] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
 
   // Fetch Category Requests
   const fetchRequests = useCallback(async () => {
@@ -311,6 +326,94 @@ export default function CategoriesPage() {
     }
   };
 
+  // Open Edit Category Modal
+  const openEditModal = (cat) => {
+    setEditCategory(cat);
+    setEditName(cat.name || '');
+    setEditIcon(cat.icon || '🥦');
+    setEditImage(cat.image || '');
+    setEditSortOrder(cat.sortOrder != null ? String(cat.sortOrder) : '50');
+    setEditIsActive(cat.isActive !== false);
+    setEditHomeVisibility(Boolean(cat.homeVisibility));
+  };
+
+  const closeEditModal = () => {
+    setEditCategory(null);
+    setUploadingPhoto(false);
+    setSavingCategory(false);
+  };
+
+  // Category Photo Upload through durable media storage
+  const handlePhotoFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await adminFetch('/uploads/product-image', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success && (data.url || data.path)) {
+        setEditImage(data.url || data.path);
+      } else {
+        alert(data.message || 'Image upload failed');
+      }
+    } catch (err) {
+      alert('Upload error: ' + err.message);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  // Save Category Changes
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    if (!editCategory) return;
+    setSavingCategory(true);
+    try {
+      const res = await adminFetch(`/admin/categories/${editCategory._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName.trim(),
+          icon: editIcon.trim(),
+          image: editImage.trim(),
+          sortOrder: parseInt(editSortOrder, 10) || 50,
+          isActive: editIsActive,
+          homeVisibility: editHomeVisibility
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories((prev) =>
+          prev.map((c) =>
+            c._id === editCategory._id
+              ? {
+                  ...c,
+                  name: editName.trim(),
+                  icon: editIcon.trim(),
+                  image: editImage.trim(),
+                  sortOrder: parseInt(editSortOrder, 10) || 50,
+                  isActive: editIsActive,
+                  homeVisibility: editHomeVisibility
+                }
+              : c
+          )
+        );
+        closeEditModal();
+      } else {
+        alert(data.message || 'Failed to update category');
+      }
+    } catch (err) {
+      alert('Save error: ' + err.message);
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
   const pendingRequests = requests.filter((r) => r.status === 'PENDING');
   const historyRequests = requests.filter((r) => r.status !== 'PENDING');
 
@@ -490,6 +593,7 @@ export default function CategoriesPage() {
                 <th style={styles.th}>Home Sort Order</th>
                 <th style={styles.th}>Customer Visibility</th>
                 <th style={styles.th}>Home Feed</th>
+                <th style={styles.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -497,8 +601,43 @@ export default function CategoriesPage() {
                 <tr key={c._id} style={styles.tr}>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '20px' }}>{c.icon || '🏷️'}</span>
-                      <span style={{ fontWeight: '600', color: '#1e293b' }}>{c.name}</span>
+                      {c.image ? (
+                        <img
+                          src={c.image}
+                          alt={c.name}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 8,
+                            objectFit: 'contain',
+                            backgroundColor: '#f8fafc',
+                            border: '1px solid #e2e8f0',
+                            padding: 2
+                          }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 8,
+                          backgroundColor: '#f1f5f9',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px'
+                        }}>
+                          {c.icon || '🏷️'}
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>{c.name}</div>
+                        {c.image ? (
+                          <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: '700' }}>✓ Photo Active</span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>Icon: {c.icon || '🏷️'}</span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td style={styles.td}>
@@ -571,6 +710,16 @@ export default function CategoriesPage() {
                       title="Toggle whether this category appears on the Customer Home screen"
                     >
                       {c.homeVisibility ? 'Visible on Home' : 'Hidden from Home'}
+                    </button>
+                  </td>
+                  <td style={styles.td}>
+                    <button
+                      onClick={() => openEditModal(c)}
+                      style={styles.editActionBtn}
+                      title="Edit Category Details and Photo"
+                    >
+                      <Edit2 size={13} style={{ marginRight: 6 }} />
+                      Edit Photo
                     </button>
                   </td>
                 </tr>
@@ -913,6 +1062,170 @@ export default function CategoriesPage() {
                 {actionLoading ? 'Rejecting...' : 'Reject Request'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Modal: Edit Category & Photo */}
+      {editCategory && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modalCard, maxWidth: '540px' }}>
+            <div style={styles.modalHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={20} color="#16a34a" />
+                <h3 style={styles.modalTitle}>Edit Category & Photo</h3>
+              </div>
+              <button onClick={closeEditModal} style={styles.closeBtn}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={styles.modalDesc}>
+              Update category metadata, ordering, and upload a durable product package photo displayed on Customer Home.
+            </p>
+
+            <form onSubmit={handleSaveCategory}>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>Category Name *</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  style={styles.formInput}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>Fallback Icon (Emoji)</label>
+                  <input
+                    type="text"
+                    value={editIcon}
+                    onChange={(e) => setEditIcon(e.target.value)}
+                    placeholder="🥦"
+                    style={styles.formInput}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>Sort Order (Home)</label>
+                  <input
+                    type="number"
+                    value={editSortOrder}
+                    onChange={(e) => setEditSortOrder(e.target.value)}
+                    style={styles.formInput}
+                  />
+                </div>
+              </div>
+
+              {/* Photo Upload Section */}
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>Category Photo (Customer Grid)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '6px' }}>
+                  <div style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 12,
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#f8fafc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    flexShrink: 0
+                  }}>
+                    {editImage ? (
+                      <img
+                        src={editImage}
+                        alt="Category Preview"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '32px' }}>{editIcon || '🏷️'}</span>
+                    )}
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <label style={{
+                        ...styles.uploadBtn,
+                        opacity: uploadingPhoto ? 0.7 : 1,
+                        cursor: uploadingPhoto ? 'not-allowed' : 'pointer'
+                      }}>
+                        <Upload size={14} style={{ marginRight: 6 }} />
+                        {uploadingPhoto ? 'Uploading...' : 'Upload Image'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoFileChange}
+                          disabled={uploadingPhoto}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      {editImage && (
+                        <button
+                          type="button"
+                          onClick={() => setEditImage('')}
+                          style={styles.clearBtn}
+                          title="Remove image and revert to fallback icon"
+                        >
+                          <Trash2 size={14} color="#ef4444" />
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', margin: '6px 0 0' }}>
+                      Upload square or packaging photo. Preserves original proportions on Customer Home.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '10px' }}>
+                  <input
+                    type="text"
+                    value={editImage}
+                    onChange={(e) => setEditImage(e.target.value)}
+                    placeholder="Or enter direct image URL (https://...)"
+                    style={{ ...styles.formInput, fontSize: '12px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div style={{ display: 'flex', gap: '16px', margin: '16px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <input
+                    type="checkbox"
+                    checked={editIsActive}
+                    onChange={(e) => setEditIsActive(e.target.checked)}
+                  />
+                  <span style={{ fontWeight: '600', color: '#1e293b' }}>Active Status</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <input
+                    type="checkbox"
+                    checked={editHomeVisibility}
+                    onChange={(e) => setEditHomeVisibility(e.target.checked)}
+                  />
+                  <span style={{ fontWeight: '600', color: '#1e293b' }}>Visible on Home Screen</span>
+                </label>
+              </div>
+
+              <div style={styles.modalFooter}>
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  style={styles.cancelBtn}
+                  disabled={savingCategory || uploadingPhoto}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={styles.saveBtn}
+                  disabled={savingCategory || uploadingPhoto}
+                >
+                  {savingCategory ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1367,5 +1680,52 @@ const styles = {
     fontSize: '13px',
     marginBottom: '16px',
     border: '1px solid #fecaca'
+  },
+  editActionBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 12px',
+    borderRadius: '8px',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: '0.2s',
+    whiteSpace: 'nowrap'
+  },
+  uploadBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  clearBtn: {
+    padding: '8px',
+    borderRadius: '8px',
+    border: '1px solid #fee2e2',
+    backgroundColor: '#fef2f2',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  saveBtn: {
+    padding: '10px 20px',
+    borderRadius: '8px',
+    border: 'none',
+    backgroundColor: '#16a34a',
+    color: '#ffffff',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer'
   }
 };
