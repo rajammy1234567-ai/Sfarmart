@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import HomeSection from '../models/HomeSection.js';
 import Product from '../models/Product.js';
 import Category from '../models/Category.js';
+import Vendor from '../models/Vendor.js';
+import { formatProductResponse } from './productController.js';
 
 // Public: Get active populated home sections for Customer App
 export const getPublicHomeSections = async (req, res) => {
@@ -51,8 +53,56 @@ export const getPublicHomeSections = async (req, res) => {
       if (prods.length > 0) {
         sectionsWithContent.push({
           ...sec,
-          products: prods
+          products: prods.map((p) => formatProductResponse(p, req))
         });
+      }
+    }
+
+    // Fallback: If no custom HomeSection records are active, generate sections
+    // from active Admin-configured Categories in their exact configured sortOrder.
+    // Each section is fetched using its own category criteria.
+    if (sectionsWithContent.length === 0) {
+      const activeCategories = await Category.find({ isActive: true })
+        .sort({ sortOrder: 1, createdAt: 1 })
+        .lean();
+
+      for (const cat of activeCategories) {
+        let prods = await Product.find({
+          category: cat._id,
+          isActive: true,
+          isPublished: { $ne: false }
+        })
+          .sort({ inStock: -1, createdAt: -1 })
+          .limit(8)
+          .populate('vendor', 'storeName isOpen storeType isActive isApproved avgPrepTimeMins minOrderValue rating numReviews')
+          .populate('category', 'name slug icon image type')
+          .lean();
+
+        // Filter out products from inactive or unapproved vendors
+        prods = prods.filter((p) => {
+          if (!p.vendor) return false;
+          if (p.vendor.isActive === false || p.vendor.isApproved === false) return false;
+          return true;
+        });
+
+        if (prods.length > 0) {
+          sectionsWithContent.push({
+            _id: `cat-section-${cat._id}`,
+            title: cat.name,
+            subtitle: cat.description || `Fresh ${cat.name} & essentials`,
+            sectionType: 'CATEGORY_PRODUCTS',
+            category: {
+              _id: cat._id,
+              name: cat.name,
+              slug: cat.slug,
+              icon: cat.icon,
+              image: cat.image,
+              type: cat.type
+            },
+            sortOrder: cat.sortOrder || 0,
+            products: prods.map((p) => formatProductResponse(p, req))
+          });
+        }
       }
     }
 

@@ -168,7 +168,15 @@ export const HomeScreen = ({ navigation, route }) => {
   const [banners, setBanners] = useState([]);
   const [homeSections, setHomeSections] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [isSearchingApi, setIsSearchingApi] = useState(false);
+  const searchTimerRef = useRef(null);
+  const searchSeqRef = useRef(0);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [categoryProducts, setCategoryProducts] = useState([]);
+  const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [sortBy, setSortBy] = useState('default');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -230,6 +238,86 @@ export const HomeScreen = ({ navigation, route }) => {
       if (sub?.remove) sub.remove();
     };
   }, []);
+
+  // Server-side search debounce (300ms)
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const q = searchQuery.trim();
+    if (!q) {
+      setDebouncedSearch('');
+      setSearchResults([]);
+      setSearchTotal(0);
+      setIsSearchingApi(false);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(q);
+    }, 300);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
+
+  // Execute server-side search across entire eligible catalog
+  useEffect(() => {
+    if (!debouncedSearch) {
+      setSearchResults([]);
+      setSearchTotal(0);
+      return;
+    }
+    const seq = ++searchSeqRef.current;
+    setIsSearchingApi(true);
+    apiService.getProducts({ search: debouncedSearch, limit: 50 })
+      .then((res) => {
+        if (seq !== searchSeqRef.current) return;
+        if (res && res.success && Array.isArray(res.products)) {
+          setSearchResults(res.products);
+          setSearchTotal(typeof res.total === 'number' ? res.total : res.products.length);
+        } else {
+          setSearchResults([]);
+          setSearchTotal(0);
+        }
+      })
+      .catch((err) => {
+        if (seq !== searchSeqRef.current) return;
+        console.warn('Home server search failed:', err);
+        setSearchResults([]);
+        setSearchTotal(0);
+      })
+      .finally(() => {
+        if (seq === searchSeqRef.current) {
+          setIsSearchingApi(false);
+        }
+      });
+  }, [debouncedSearch]);
+
+  // When a category filter is selected, fetch products for that specific category
+  useEffect(() => {
+    if (selectedCategory === 'all') {
+      setCategoryProducts([]);
+      return;
+    }
+    let isCurrent = true;
+    setIsCategoryLoading(true);
+    apiService.getProducts({ category: selectedCategory, limit: 50, inStockOnly: 'true' })
+      .then((res) => {
+        if (!isCurrent) return;
+        if (res && res.success && Array.isArray(res.products)) {
+          setCategoryProducts(res.products);
+        } else {
+          setCategoryProducts([]);
+        }
+      })
+      .catch((err) => {
+        if (!isCurrent) return;
+        console.warn('Category products fetch failed:', err);
+        setCategoryProducts([]);
+      })
+      .finally(() => {
+        if (isCurrent) setIsCategoryLoading(false);
+      });
+    return () => { isCurrent = false; };
+  }, [selectedCategory]);
 
   const loadHomeData = useCallback(async (isPullToRefresh = false) => {
     if (isPullToRefresh) {
@@ -344,7 +432,10 @@ export const HomeScreen = ({ navigation, route }) => {
   });
 
   // Filter products by selected category and apply real price sorting
-  const displayedProducts = availableProducts
+  const baseCategoryList = selectedCategory === 'all'
+    ? availableProducts
+    : (categoryProducts.length > 0 ? categoryProducts : availableProducts);
+  const displayedProducts = baseCategoryList
     .filter((p) => {
       if (selectedCategory === 'all') return true;
       const catSlug = (p.category?.slug || p.category?.canonicalSlug || '').toLowerCase();
@@ -358,23 +449,6 @@ export const HomeScreen = ({ navigation, route }) => {
       if (sortBy === 'price_high') return Number(b.price || 0) - Number(a.price || 0);
       return 0;
     });
-
-  // Dynamic grouping for default sections if no custom admin sections configured
-  const categoriesWithProducts = categories
-    .map((cat) => {
-      const catIdentifier = (cat.slug || cat._id || cat.key || '').toLowerCase();
-      const catProducts = availableProducts.filter((p) => {
-        const pSlug = (p.category?.slug || p.category?.canonicalSlug || '').toLowerCase();
-        const pId = (p.category?._id || p.category?.id || p.category || '').toString().toLowerCase();
-        const pKey = (p.category?.key || '').toLowerCase();
-        return pSlug === catIdentifier || pId === catIdentifier || pKey === catIdentifier || pSlug.includes(catIdentifier);
-      });
-      return {
-        ...cat,
-        products: catProducts
-      };
-    })
-    .filter((cat) => cat.products.length > 0);
 
   const hasActiveCart = Boolean(billSummary && billSummary.totalCount > 0);
   const scrollPaddingBottom = getScrollBottomPadding(insets, hasActiveCart);
@@ -556,14 +630,28 @@ export const HomeScreen = ({ navigation, route }) => {
           </View>
         )}
 
-        {/* Dynamic Search Results Banner */}
+        {/* Dynamic Server-Side Search Results Banner */}
         {isSearching ? (
           <View style={styles.searchResultWrapper}>
-            <Text style={styles.searchResultHeader}>
-              MATCHING PRODUCTS ({availableProducts.length})
-            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={styles.searchResultHeader}>
+                MATCHING PRODUCTS ({searchTotal || searchResults.length})
+              </Text>
+              {searchResults.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Catalog', { search: debouncedSearch })}
+                >
+                  <Text style={styles.seeAllText}>See all in Catalog →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
-            {availableProducts.length === 0 && filteredVendors.length === 0 ? (
+            {isSearchingApi && searchResults.length === 0 ? (
+              <View style={styles.initialLoadingContainer}>
+                <ActivityIndicator size="small" color="#16a34a" />
+                <Text style={styles.initialLoadingText}>Searching catalog on server...</Text>
+              </View>
+            ) : searchResults.length === 0 && filteredVendors.length === 0 ? (
               <View style={styles.noSearchCard}>
                 <Ionicons name="search-outline" size={40} color="#94a3b8" />
                 <Text style={styles.noSearchTitle}>No matching products</Text>
@@ -576,11 +664,11 @@ export const HomeScreen = ({ navigation, route }) => {
               </View>
             ) : (
               <View>
-                {/* Matching Products */}
-                {availableProducts.length > 0 && (
+                {/* Matching Products from Server */}
+                {searchResults.length > 0 && (
                   <View style={styles.productsGrid}>
-                    {availableProducts.map((p) => (
-                      <View key={p._id} style={styles.productCol}>
+                    {searchResults.map((p) => (
+                      <View key={p._id || p.id} style={styles.productCol}>
                         <ProductCard
                           product={p}
                           onPress={() => navigation.navigate('ProductDetails', { product: p })}
@@ -681,7 +769,11 @@ export const HomeScreen = ({ navigation, route }) => {
                         cat={cat}
                         isSelected={isSelected}
                         reduceMotion={reduceMotion}
-                        onPress={() => setSelectedCategory(isSelected ? 'all' : (cat.slug || cat._id))}
+                        onPress={() => {
+                          navigation.navigate('Catalog', {
+                            category: cat.slug || cat._id || cat.name
+                          });
+                        }}
                       />
                     );
                   })}
@@ -751,6 +843,7 @@ export const HomeScreen = ({ navigation, route }) => {
             {homeSections.length > 0 ? (
               homeSections.map((sec) => {
                 if (!sec.products || sec.products.length === 0) return null;
+                const secCatSlug = sec.category?.slug || sec.category?._id || sec.category?.name || sec.category || sec.title;
                 return (
                   <View key={sec._id} style={styles.sectionContainer}>
                     <View style={styles.sectionHeaderRow}>
@@ -760,13 +853,15 @@ export const HomeScreen = ({ navigation, route }) => {
                           <Text style={styles.sectionSubHeading}>{sec.subtitle}</Text>
                         ) : null}
                       </View>
-                      {sec.category && (
-                        <TouchableOpacity
-                          onPress={() => setSelectedCategory(sec.category.slug || sec.category._id)}
-                        >
-                          <Text style={styles.seeAllText}>See All →</Text>
-                        </TouchableOpacity>
-                      )}
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigation.navigate('Catalog', {
+                            category: secCatSlug
+                          });
+                        }}
+                      >
+                        <Text style={styles.seeAllText}>View All →</Text>
+                      </TouchableOpacity>
                     </View>
 
                     {/* Horizontal rail for Blinkit quick-browse feel */}
@@ -776,7 +871,7 @@ export const HomeScreen = ({ navigation, route }) => {
                       contentContainerStyle={styles.horizontalProductRail}
                     >
                       {sec.products.map((p) => (
-                        <View key={p._id} style={styles.railProductCardWrap}>
+                        <View key={p._id || p.id} style={styles.railProductCardWrap}>
                           <ProductCard
                             product={p}
                             compact={true}
@@ -788,39 +883,6 @@ export const HomeScreen = ({ navigation, route }) => {
                   </View>
                 );
               })
-            ) : categoriesWithProducts.length > 0 ? (
-              /* Fallback to grouped category sections when no custom admin sections configured yet */
-              categoriesWithProducts.map((catSec) => (
-                <View key={catSec._id || catSec.slug} style={styles.sectionContainer}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View>
-                      <Text style={styles.sectionHeading}>{catSec.name}</Text>
-                      <Text style={styles.sectionSubHeading}>
-                        {catSec.products.length} product{catSec.products.length === 1 ? '' : 's'} available
-                      </Text>
-                    </View>
-                    <TouchableOpacity onPress={() => setSelectedCategory(catSec.slug || catSec._id)}>
-                      <Text style={styles.seeAllText}>View All →</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.horizontalProductRail}
-                  >
-                    {catSec.products.slice(0, 8).map((product) => (
-                      <View key={product._id} style={styles.railProductCardWrap}>
-                        <ProductCard
-                          product={product}
-                          compact={true}
-                          onPress={() => navigation.navigate('ProductDetails', { product })}
-                        />
-                      </View>
-                    ))}
-                  </ScrollView>
-                </View>
-              ))
             ) : availableProducts.length > 0 ? (
               /* All Available Products Grid */
               <View style={styles.sectionContainer}>

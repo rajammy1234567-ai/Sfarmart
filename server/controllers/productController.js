@@ -136,7 +136,15 @@ export const getAllProducts = async (req, res) => {
           return res.json({ success: true, page: paging.page, limit: paging.limit, total: 0, totalPages: 1, hasMore: false, count: 0, products: [] });
         }
       } else {
-        const catDoc = await Category.findOne({ slug: category.toLowerCase().trim(), isActive: true });
+        const cleanCat = category.trim();
+        const escaped = cleanCat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const catDoc = await Category.findOne({
+          $or: [
+            { slug: cleanCat.toLowerCase() },
+            { name: new RegExp(`^${escaped}$`, 'i') }
+          ],
+          isActive: true
+        });
         if (catDoc) {
           filter.category = catDoc._id;
         } else {
@@ -266,7 +274,15 @@ export const getVendorProducts = async (req, res) => {
       if (mongoose.isValidObjectId(category)) {
         filter.category = category;
       } else {
-        const catDoc = await Category.findOne({ slug: category.toLowerCase().trim() });
+        const cleanCat = category.trim();
+        const escaped = cleanCat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const catDoc = await Category.findOne({
+          $or: [
+            { slug: cleanCat.toLowerCase() },
+            { name: new RegExp(`^${escaped}$`, 'i') }
+          ],
+          isActive: true
+        });
         if (catDoc) filter.category = catDoc._id;
       }
     }

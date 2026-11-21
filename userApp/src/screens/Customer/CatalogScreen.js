@@ -23,14 +23,16 @@ import { getScrollBottomPadding } from '../../theme/layout';
 
 const GAP = 12;
 
-export const CatalogScreen = ({ navigation }) => {
+export const CatalogScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { conflictModal, confirmReplaceCart, cancelReplaceCart } = useCart();
+  const initialCategory = route?.params?.category || route?.params?.selectedCategory || 'all';
+  const initialSearch = route?.params?.search || '';
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedCat, setSelectedCat] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedCat, setSelectedCat] = useState(initialCategory);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -42,6 +44,18 @@ export const CatalogScreen = ({ navigation }) => {
 
   const requestSeqRef = useRef(0);
   const searchTimerRef = useRef(null);
+
+  // Synchronize route params when navigated with category or search
+  useEffect(() => {
+    const nextCat = route?.params?.category || route?.params?.selectedCategory;
+    if (nextCat && nextCat !== selectedCat) {
+      setSelectedCat(nextCat);
+    }
+    if (route?.params?.search !== undefined && route.params.search !== searchQuery) {
+      setSearchQuery(route.params.search || '');
+      setDebouncedSearch(route.params.search || '');
+    }
+  }, [route?.params?.category, route?.params?.selectedCategory, route?.params?.search]);
 
   // Debounce search query input (300ms)
   const handleSearchChange = (text) => {

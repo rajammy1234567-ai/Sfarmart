@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,12 @@ export const VendorStoreScreen = ({ route, navigation }) => {
     initialVendor._id;
   const [vendor, setVendor] = useState(initialVendor);
   const [products, setProducts] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(null);
+  const storeSeqRef = useRef(0);
   const [selectedSubCat, setSelectedSubCat] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [productError, setProductError] = useState('');
@@ -121,21 +127,65 @@ export const VendorStoreScreen = ({ route, navigation }) => {
     }
   };
 
-  const fetchProducts = async (vId) => {
-    try {
+  const fetchProducts = async (vId, targetPage = 1) => {
+    const isFirst = targetPage === 1;
+    const seq = ++storeSeqRef.current;
+    if (isFirst) {
       setIsLoading(true);
       setProductError('');
-      const res = await apiService.getVendorProducts(vId);
-      if (res.success && Array.isArray(res.products)) {
-        setProducts(res.products);
+      setLoadMoreError(null);
+    } else {
+      if (isLoadingMore || !hasMore) return;
+      setIsLoadingMore(true);
+      setLoadMoreError(null);
+    }
+
+    try {
+      const res = await apiService.getVendorProducts(vId, { page: targetPage, limit: 50 });
+      if (seq !== storeSeqRef.current) return;
+
+      if (res && res.success && Array.isArray(res.products)) {
+        if (isFirst) {
+          setProducts(res.products);
+        } else {
+          setProducts((prev) => {
+            const map = new Map();
+            prev.forEach((p) => map.set(p._id || p.id, p));
+            res.products.forEach((p) => map.set(p._id || p.id, p));
+            return Array.from(map.values());
+          });
+        }
+        setPage(Number(res.page || targetPage));
+        setHasMore(Boolean(res.hasMore));
+        setTotalCount(typeof res.total === 'number' ? res.total : (isFirst ? res.products.length : totalCount));
       } else {
-        setProductError(res?.message || 'Products could not be loaded. Please retry.');
+        if (isFirst) {
+          setProducts([]);
+          setProductError(res?.message || 'Products could not be loaded. Please retry.');
+        } else {
+          setLoadMoreError(res?.message || 'Could not load more items.');
+        }
       }
     } catch (e) {
+      if (seq !== storeSeqRef.current) return;
       console.warn('Failed to load store products:', e);
-      setProductError(e?.message || 'Products could not be loaded. Please retry.');
+      if (isFirst) {
+        setProductError(e?.message || 'Products could not be loaded. Please retry.');
+      } else {
+        setLoadMoreError('Network error loading more items.');
+      }
     } finally {
-      setIsLoading(false);
+      if (seq === storeSeqRef.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (!isLoading && !isLoadingMore && hasMore) {
+      const vId = targetVendorId || vendor?._id;
+      if (vId) fetchProducts(vId, page + 1);
     }
   };
 
@@ -197,6 +247,14 @@ export const VendorStoreScreen = ({ route, navigation }) => {
           }
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 250;
+          if (isNearBottom) {
+            handleLoadMore();
+          }
+        }}
+        scrollEventThrottle={400}
       >
         {/* Bounded Hero Banner */}
         <View style={styles.heroBanner}>
@@ -506,6 +564,26 @@ export const VendorStoreScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               );
             })}
+            {/* Incremental Loading Indicator & End-of-List */}
+            {isLoadingMore && (
+              <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 6 }}>Loading more items...</Text>
+              </View>
+            )}
+            {loadMoreError && (
+              <TouchableOpacity
+                style={{ paddingVertical: 14, alignItems: 'center' }}
+                onPress={handleLoadMore}
+              >
+                <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>Failed to load more. Tap to retry</Text>
+              </TouchableOpacity>
+            )}
+            {!hasMore && products.length > 0 && totalCount > 50 && (
+              <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted }}>All {totalCount} items loaded</Text>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
