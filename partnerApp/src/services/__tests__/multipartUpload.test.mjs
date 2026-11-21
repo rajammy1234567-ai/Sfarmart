@@ -9,6 +9,9 @@ test('PartnerContext uploadMultipart source verification and transport contracts
     'utf8'
   );
 
+  // 0. Confirm Platform is explicitly imported from react-native
+  assert.match(contextSource, /import\s*\{[^}]*\bPlatform\b[^}]*\}\s*from\s*['"]react-native['"]/);
+
   // 1. Confirm uploadMultipart is defined and uses XMLHttpRequest for native platforms
   assert.match(contextSource, /const uploadMultipart = async/);
   assert.match(contextSource, /const xhr = new XMLHttpRequest\(\)/);

@@ -9,6 +9,7 @@ import {
   Image,
   Switch,
   Platform,
+  Linking,
   StatusBar,
   KeyboardAvoidingView,
   ActivityIndicator,

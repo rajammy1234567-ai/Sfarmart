@@ -1,6 +1,6 @@
 import { requestPartnerLogin, requestPartnerRegister, loginErrorMessage } from '../services/partnerLogin';
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { fetchJsonResponse as fetch, collectPages, createSingleFlight, startPolling } from '../services/requestPolicy';
 import { API_BASE_URL } from '../config/env';
 import storage from '../services/storage';
