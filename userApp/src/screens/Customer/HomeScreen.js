@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
@@ -159,28 +160,48 @@ const CategoryGridTile = React.memo(({ cat, isSelected, onPress, reduceMotion })
   );
 });
 
+// Filter available products (exclude controlled test shop and unpublished items)
+const filterEligibleProducts = (rawProducts) => {
+  if (!Array.isArray(rawProducts)) return [];
+  return rawProducts.filter((p) => {
+    if (!p) return false;
+    if (p.isActive === false || p.isPublished === false) return false;
+    const v = p.vendor;
+    if (!v) return false;
+    if (v.isActive === false || v.isApproved === false) return false;
+    const vId = (v._id || v.id || String(v || '')).toString();
+    if (vId === '6aea07db1cf98f83bee27ee4') return false;
+    if (v.storeName?.toLowerCase().includes('controlled verification')) return false;
+    return true;
+  });
+};
+
 export const HomeScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [reduceMotion, setReduceMotion] = useState(false);
   const [categories, setCategories] = useState(() => resolveBrowseCategories([]));
   const [vendors, setVendors] = useState([]);
-  const [products, setProducts] = useState([]);
   const [banners, setBanners] = useState([]);
   const [homeSections, setHomeSections] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchTotal, setSearchTotal] = useState(0);
-  const [isSearchingApi, setIsSearchingApi] = useState(false);
-  const searchTimerRef = useRef(null);
-  const searchSeqRef = useRef(0);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [categoryProducts, setCategoryProducts] = useState([]);
-  const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [sortBy, setSortBy] = useState('default');
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiError, setApiError] = useState(null);
+
+  // Paginated 2-column vertical feed states
+  const [feedProducts, setFeedProducts] = useState([]);
+  const [feedPage, setFeedPage] = useState(1);
+  const [hasMoreFeed, setHasMoreFeed] = useState(false);
+  const [feedTotal, setFeedTotal] = useState(0);
+  const [isLoadingFeed, setIsLoadingFeed] = useState(true);
+  const [isLoadingMoreFeed, setIsLoadingMoreFeed] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(null);
+
+  const searchTimerRef = useRef(null);
+  const feedSeqRef = useRef(0);
+  const isLoadingMoreRef = useRef(false);
 
   const {
     billSummary,
@@ -245,9 +266,6 @@ export const HomeScreen = ({ navigation, route }) => {
     const q = searchQuery.trim();
     if (!q) {
       setDebouncedSearch('');
-      setSearchResults([]);
-      setSearchTotal(0);
-      setIsSearchingApi(false);
       return;
     }
     searchTimerRef.current = setTimeout(() => {
@@ -258,86 +276,18 @@ export const HomeScreen = ({ navigation, route }) => {
     };
   }, [searchQuery]);
 
-  // Execute server-side search across entire eligible catalog
-  useEffect(() => {
-    if (!debouncedSearch) {
-      setSearchResults([]);
-      setSearchTotal(0);
-      return;
-    }
-    const seq = ++searchSeqRef.current;
-    setIsSearchingApi(true);
-    apiService.getProducts({ search: debouncedSearch, limit: 50 })
-      .then((res) => {
-        if (seq !== searchSeqRef.current) return;
-        if (res && res.success && Array.isArray(res.products)) {
-          setSearchResults(res.products);
-          setSearchTotal(typeof res.total === 'number' ? res.total : res.products.length);
-        } else {
-          setSearchResults([]);
-          setSearchTotal(0);
-        }
-      })
-      .catch((err) => {
-        if (seq !== searchSeqRef.current) return;
-        console.warn('Home server search failed:', err);
-        setSearchResults([]);
-        setSearchTotal(0);
-      })
-      .finally(() => {
-        if (seq === searchSeqRef.current) {
-          setIsSearchingApi(false);
-        }
-      });
-  }, [debouncedSearch]);
-
-  // When a category filter is selected, fetch products for that specific category
-  useEffect(() => {
-    if (selectedCategory === 'all') {
-      setCategoryProducts([]);
-      return;
-    }
-    let isCurrent = true;
-    setIsCategoryLoading(true);
-    apiService.getProducts({ category: selectedCategory, limit: 50, inStockOnly: 'true' })
-      .then((res) => {
-        if (!isCurrent) return;
-        if (res && res.success && Array.isArray(res.products)) {
-          setCategoryProducts(res.products);
-        } else {
-          setCategoryProducts([]);
-        }
-      })
-      .catch((err) => {
-        if (!isCurrent) return;
-        console.warn('Category products fetch failed:', err);
-        setCategoryProducts([]);
-      })
-      .finally(() => {
-        if (isCurrent) setIsCategoryLoading(false);
-      });
-    return () => { isCurrent = false; };
-  }, [selectedCategory]);
-
-  const loadHomeData = useCallback(async (isPullToRefresh = false) => {
-    if (isPullToRefresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
-    }
-
+  // Load Home metadata (categories, active vendors, merchandising banners, curated rails)
+  const loadHomeMetadata = useCallback(async (isPullToRefresh = false) => {
     try {
-      const [catResult, vendResult, prodResult, banResult, secResult] = await Promise.allSettled([
+      const [catResult, vendResult, banResult, secResult] = await Promise.allSettled([
         apiService.getHomeCategories(),
         apiService.getVendors(),
-        apiService.getProducts({ limit: 16, inStockOnly: 'true' }),
         apiService.getBanners ? apiService.getBanners() : Promise.resolve({ success: true, banners: [] }),
         apiService.getHomeSections ? apiService.getHomeSections() : Promise.resolve({ success: true, sections: [] })
       ]);
 
       const catRes = catResult.status === 'fulfilled' ? catResult.value : null;
       const vendRes = vendResult.status === 'fulfilled' ? vendResult.value : null;
-      const prodRes = prodResult.status === 'fulfilled' ? prodResult.value : null;
       const banRes = banResult.status === 'fulfilled' ? banResult.value : null;
       const secRes = secResult.status === 'fulfilled' ? secResult.value : null;
 
@@ -350,10 +300,6 @@ export const HomeScreen = ({ navigation, route }) => {
 
       if (vendRes && vendRes.success && Array.isArray(vendRes.vendors)) {
         setVendors(vendRes.vendors);
-      }
-
-      if (prodRes && prodRes.success && Array.isArray(prodRes.products)) {
-        setProducts(prodRes.products);
       }
 
       if (banRes && banRes.success && Array.isArray(banRes.banners)) {
@@ -374,17 +320,163 @@ export const HomeScreen = ({ navigation, route }) => {
         setApiError(null);
       }
     } catch (err) {
-      console.warn('HomeScreen loadHomeData error:', err);
+      console.warn('HomeScreen loadHomeMetadata error:', err);
       setApiError('Unable to load produce. Tap to retry.');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
     }
   }, []);
 
+  // Load initial page (first 50 products) of the vertical feed
+  const loadFeedInitial = useCallback(
+    async ({
+      search = debouncedSearch,
+      category = selectedCategory,
+      sort = sortBy,
+      isPullToRefresh = false
+    } = {}) => {
+      const seq = ++feedSeqRef.current;
+      if (!isPullToRefresh) {
+        setIsLoadingFeed(true);
+      }
+      setLoadMoreError(null);
+      setApiError(null);
+
+      try {
+        const params = {
+          page: 1,
+          limit: 50,
+          inStockOnly: 'true'
+        };
+        if (search && search.trim()) params.search = search.trim();
+        if (category && category !== 'all') params.category = category;
+        if (sort && sort !== 'default') params.sort = sort;
+
+        const res = await apiService.getProducts(params);
+
+        if (seq !== feedSeqRef.current) return; // Drop stale response
+
+        if (res && res.success && Array.isArray(res.products)) {
+          const eligible = filterEligibleProducts(res.products);
+          const map = new Map();
+          eligible.forEach((p) => {
+            const key = p._id || p.id;
+            if (key) map.set(String(key), p);
+          });
+          const deduped = Array.from(map.values());
+          setFeedProducts(deduped);
+          setFeedPage(1);
+          setHasMoreFeed(Boolean(res.hasMore));
+          setFeedTotal(typeof res.total === 'number' ? res.total : deduped.length);
+        } else if (Array.isArray(res)) {
+          const eligible = filterEligibleProducts(res);
+          setFeedProducts(eligible);
+          setFeedPage(1);
+          setHasMoreFeed(false);
+          setFeedTotal(eligible.length);
+        } else {
+          setFeedProducts([]);
+          setFeedTotal(0);
+          setHasMoreFeed(false);
+        }
+      } catch (err) {
+        if (seq !== feedSeqRef.current) return;
+        console.warn('HomeScreen loadFeedInitial error:', err);
+        setApiError('Unable to load produce. Tap to retry.');
+      } finally {
+        if (seq === feedSeqRef.current) {
+          setIsLoadingFeed(false);
+        }
+      }
+    },
+    [debouncedSearch, selectedCategory, sortBy]
+  );
+
+  // Load next 50 products on end reached (virtualized infinite scroll)
+  const handleLoadMoreFeed = useCallback(async () => {
+    if (!hasMoreFeed || isLoadingMoreRef.current || isLoadingFeed || isRefreshing) return;
+    isLoadingMoreRef.current = true;
+    setIsLoadingMoreFeed(true);
+    setLoadMoreError(null);
+
+    const nextPage = feedPage + 1;
+    const seq = feedSeqRef.current;
+
+    try {
+      const params = {
+        page: nextPage,
+        limit: 50,
+        inStockOnly: 'true'
+      };
+      if (debouncedSearch && debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      if (selectedCategory && selectedCategory !== 'all') params.category = selectedCategory;
+      if (sortBy && sortBy !== 'default') params.sort = sortBy;
+
+      const res = await apiService.getProducts(params);
+
+      if (seq !== feedSeqRef.current) return;
+
+      if (res && res.success && Array.isArray(res.products)) {
+        const eligible = filterEligibleProducts(res.products);
+        setFeedProducts((prev) => {
+          const map = new Map();
+          prev.forEach((p) => {
+            const key = p._id || p.id;
+            if (key) map.set(String(key), p);
+          });
+          eligible.forEach((p) => {
+            const key = p._id || p.id;
+            if (key) map.set(String(key), p);
+          });
+          return Array.from(map.values());
+        });
+        setFeedPage(nextPage);
+        setHasMoreFeed(Boolean(res.hasMore));
+        if (typeof res.total === 'number') setFeedTotal(res.total);
+      } else {
+        setHasMoreFeed(false);
+      }
+    } catch (err) {
+      if (seq !== feedSeqRef.current) return;
+      console.warn('HomeScreen handleLoadMoreFeed error:', err);
+      setLoadMoreError('Could not load more items. Tap to retry.');
+    } finally {
+      if (seq === feedSeqRef.current) {
+        setIsLoadingMoreFeed(false);
+        isLoadingMoreRef.current = false;
+      }
+    }
+  }, [hasMoreFeed, isLoadingFeed, isRefreshing, feedPage, debouncedSearch, selectedCategory, sortBy]);
+
+  // Initial metadata sync on mount
   useEffect(() => {
-    loadHomeData(false);
-  }, [loadHomeData]);
+    loadHomeMetadata(false);
+  }, [loadHomeMetadata]);
+
+  // Reactively fetch page 1 whenever search, category, or sort changes
+  useEffect(() => {
+    loadFeedInitial({
+      search: debouncedSearch,
+      category: selectedCategory,
+      sort: sortBy
+    });
+  }, [debouncedSearch, selectedCategory, sortBy, loadFeedInitial]);
+
+  // Pull-to-refresh handler (syncs metadata and resets feed to page 1)
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.allSettled([
+        loadHomeMetadata(true),
+        loadFeedInitial({
+          search: debouncedSearch,
+          category: selectedCategory,
+          sort: sortBy,
+          isPullToRefresh: true
+        })
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadHomeMetadata, loadFeedInitial, debouncedSearch, selectedCategory, sortBy]);
 
   const isSearching = searchQuery.trim().length > 0;
 
@@ -412,43 +504,16 @@ export const HomeScreen = ({ navigation, route }) => {
     return c.name?.toLowerCase().includes(q) || c.slug?.toLowerCase().includes(q);
   });
 
-  // Filter available products (exclude controlled test shop and unpublished items)
-  const availableProducts = products.filter((p) => {
-    if (p.isActive === false || p.isPublished === false) return false;
-    const v = p.vendor;
-    if (!v) return false;
-    if (v.isActive === false || v.isApproved === false) return false;
-    const vId = (v._id || v.id || String(v || '')).toString();
-    if (vId === '6aea07db1cf98f83bee27ee4') return false;
-    if (v.storeName?.toLowerCase().includes('controlled verification')) return false;
-
-    if (!isSearching) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      p.name?.toLowerCase().includes(q) ||
-      p.description?.toLowerCase().includes(q) ||
-      v.storeName?.toLowerCase().includes(q)
-    );
-  });
-
-  // Filter products by selected category and apply real price sorting
-  const baseCategoryList = selectedCategory === 'all'
-    ? availableProducts
-    : (categoryProducts.length > 0 ? categoryProducts : availableProducts);
-  const displayedProducts = baseCategoryList
-    .filter((p) => {
-      if (selectedCategory === 'all') return true;
-      const catSlug = (p.category?.slug || p.category?.canonicalSlug || '').toLowerCase();
-      const catId = (p.category?._id || p.category?.id || p.category || '').toString();
-      const catKey = (p.category?.key || '').toLowerCase();
-      const target = selectedCategory.toLowerCase();
-      return catSlug === target || catId === target || catKey === target || catSlug.includes(target);
-    })
-    .sort((a, b) => {
-      if (sortBy === 'price_low') return Number(a.price || 0) - Number(b.price || 0);
-      if (sortBy === 'price_high') return Number(b.price || 0) - Number(a.price || 0);
-      return 0;
-    });
+  // Client sort memoization for immediate responsiveness
+  const sortedFeedProducts = useMemo(() => {
+    if (sortBy === 'price_low') {
+      return [...feedProducts].sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    }
+    if (sortBy === 'price_high') {
+      return [...feedProducts].sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    }
+    return feedProducts;
+  }, [feedProducts, sortBy]);
 
   const hasActiveCart = Boolean(billSummary && billSummary.totalCount > 0);
   const scrollPaddingBottom = getScrollBottomPadding(insets, hasActiveCart);
@@ -459,32 +524,35 @@ export const HomeScreen = ({ navigation, route }) => {
     if (banner.linkType === 'CATEGORY' && banner.linkTarget) {
       setSelectedCategory(banner.linkTarget);
     } else if (banner.linkType === 'PRODUCT' && banner.linkTarget) {
-      const targetProduct = availableProducts.find(
+      const targetProduct = feedProducts.find(
         (p) => (p._id || p.id || '').toString() === banner.linkTarget.toString()
       );
       if (targetProduct) {
         navigation.navigate('ProductDetails', { product: targetProduct });
+      } else {
+        navigation.navigate('ProductDetails', { productId: banner.linkTarget });
       }
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <Header navigation={navigation} />
-      <ShoppingFromBanner navigation={navigation} />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => loadHomeData(true)}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
+  const renderProductItem = useCallback(
+    ({ item }) => {
+      return (
+        <View style={styles.cardWrap}>
+          <ProductCard
+            product={item}
+            compact={true}
+            onPress={() => navigation.navigate('ProductDetails', { product: item })}
           />
-        }
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPaddingBottom }]}
-      >
+        </View>
+      );
+    },
+    [navigation]
+  );
+
+  const renderHeader = () => {
+    return (
+      <View>
         {/* Prominent Blinkit-Style Search Bar */}
         <View style={styles.searchSection}>
           <Ionicons name="search" size={19} color="#16a34a" />
@@ -507,137 +575,14 @@ export const HomeScreen = ({ navigation, route }) => {
           )}
         </View>
 
-        {/* Horizontal Category Navigation Tabs Bar */}
-        {!isSearching && filteredCategories.length > 0 && (
-          <View style={styles.categoryTabsWrapper}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryTabsContent}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.categoryTabChip,
-                  selectedCategory === 'all' && styles.categoryTabChipActive
-                ]}
-                onPress={() => setSelectedCategory('all')}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel="All categories"
-              >
-                <Ionicons
-                  name="grid-outline"
-                  size={13}
-                  color={selectedCategory === 'all' ? '#ffffff' : '#16a34a'}
-                  style={{ marginRight: 4 }}
-                />
-                <Text
-                  style={[
-                    styles.categoryTabChipText,
-                    selectedCategory === 'all' && styles.categoryTabChipTextActive
-                  ]}
-                >
-                  All
-                </Text>
-              </TouchableOpacity>
-
-              {filteredCategories.map((cat, idx) => {
-                const catIdentifier = cat.slug || cat._id || cat.key || String(idx);
-                const isSelected = selectedCategory === catIdentifier || selectedCategory === cat.slug;
-                return (
-                  <TouchableOpacity
-                    key={String(cat._id || cat.slug || idx)}
-                    style={[
-                      styles.categoryTabChip,
-                      isSelected && styles.categoryTabChipActive
-                    ]}
-                    onPress={() => {
-                      setSelectedCategory(isSelected ? 'all' : (cat.slug || catIdentifier));
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${cat.name} category`}
-                  >
-                    {cat.vectorIcon ? (
-                      <Ionicons
-                        name={cat.vectorIcon}
-                        size={13}
-                        color={isSelected ? '#ffffff' : (cat.accentColor || '#16a34a')}
-                        style={{ marginRight: 4 }}
-                      />
-                    ) : (
-                      <Text style={{ fontSize: 12, marginRight: 4 }}>{cat.icon || '🥦'}</Text>
-                    )}
-                    <Text
-                      style={[
-                        styles.categoryTabChipText,
-                        isSelected && styles.categoryTabChipTextActive
-                      ]}
-                    >
-                      {cat.shortName || cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Active Category Filter Tag Banner */}
-        {!isSearching && selectedCategory !== 'all' && (
-          <View style={styles.filterActiveBar}>
-            <View style={styles.filterActiveInfo}>
-              <Ionicons name="funnel" size={12} color="#15803d" />
-              <Text style={styles.filterActiveText}>
-                Filtered: {
-                  categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name ||
-                  selectedCategory
-                } ({displayedProducts.length} product{displayedProducts.length === 1 ? '' : 's'})
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setSelectedCategory('all')}
-              style={styles.filterClearBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={13} color="#b91c1c" />
-              <Text style={styles.filterClearText}>Reset</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Retryable Error Banner on API Failure */}
-        {apiError && (
-          <TouchableOpacity
-            style={styles.errorBanner}
-            onPress={() => loadHomeData(false)}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="alert-circle-outline" size={18} color="#b91c1c" />
-            <Text style={styles.errorBannerText}>{apiError}</Text>
-            <View style={styles.errorRetryBtn}>
-              <Text style={styles.errorRetryBtnText}>Retry</Text>
-              <Ionicons name="refresh" size={12} color="#b91c1c" />
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Initial Loading Indicator */}
-        {isLoading && !isRefreshing && availableProducts.length === 0 && (
-          <View style={styles.initialLoadingContainer}>
-            <ActivityIndicator size="small" color="#16a34a" />
-            <Text style={styles.initialLoadingText}>Loading fresh inventory...</Text>
-          </View>
-        )}
-
-        {/* Dynamic Server-Side Search Results Banner */}
+        {/* Dynamic Server-Side Search View vs Normal Browse Header */}
         {isSearching ? (
           <View style={styles.searchResultWrapper}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={styles.searchResultHeaderRow}>
               <Text style={styles.searchResultHeader}>
-                MATCHING PRODUCTS ({searchTotal || searchResults.length})
+                MATCHING PRODUCTS ({feedTotal || sortedFeedProducts.length})
               </Text>
-              {searchResults.length > 0 && (
+              {sortedFeedProducts.length > 0 && (
                 <TouchableOpacity
                   onPress={() => navigation.navigate('Catalog', { search: debouncedSearch })}
                 >
@@ -646,71 +591,154 @@ export const HomeScreen = ({ navigation, route }) => {
               )}
             </View>
 
-            {isSearchingApi && searchResults.length === 0 ? (
-              <View style={styles.initialLoadingContainer}>
-                <ActivityIndicator size="small" color="#16a34a" />
-                <Text style={styles.initialLoadingText}>Searching catalog on server...</Text>
-              </View>
-            ) : searchResults.length === 0 && filteredVendors.length === 0 ? (
-              <View style={styles.noSearchCard}>
-                <Ionicons name="search-outline" size={40} color="#94a3b8" />
-                <Text style={styles.noSearchTitle}>No matching products</Text>
-                <Text style={styles.noSearchSub}>
-                  Try searching with keywords like "Fresh", "Milk", "Ghee", "Kheel", or "Rice"
-                </Text>
-                <TouchableOpacity style={styles.clearSearchBtn} onPress={() => setSearchQuery('')}>
-                  <Text style={styles.clearSearchBtnText}>Clear Search</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View>
-                {/* Matching Products from Server */}
-                {searchResults.length > 0 && (
-                  <View style={styles.productsGrid}>
-                    {searchResults.map((p) => (
-                      <View key={p._id || p.id} style={styles.productCol}>
-                        <ProductCard
-                          product={p}
-                          onPress={() => navigation.navigate('ProductDetails', { product: p })}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Matching Stores if query matches merchant name */}
-                {filteredVendors.length > 0 && (
-                  <View style={{ marginTop: 20 }}>
-                    <Text style={styles.searchSubSectionHeader}>Matching Merchant Stores</Text>
-                    {filteredVendors.map((v) => (
-                      <TouchableOpacity
-                        key={v._id}
-                        style={styles.vendorSearchCard}
-                        onPress={() => navigation.navigate('VendorStore', { vendor: v })}
-                        activeOpacity={0.9}
-                      >
-                        <SafeImage
-                          source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
-                          style={styles.vendorSearchImg}
-                          placeholderIcon="storefront-outline"
-                          placeholderIconSize={28}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.vendorSearchTitle} numberOfLines={1}>{v.storeName}</Text>
-                          <Text style={styles.vendorSearchSub} numberOfLines={1}>{v.address?.city || 'Local Store'}</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
+            {/* Matching Stores if query matches merchant name */}
+            {filteredVendors.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={styles.searchSubSectionHeader}>Matching Merchant Stores</Text>
+                {filteredVendors.map((v) => (
+                  <TouchableOpacity
+                    key={v._id}
+                    style={styles.vendorSearchCard}
+                    onPress={() => navigation.navigate('VendorStore', { vendor: v })}
+                    activeOpacity={0.9}
+                  >
+                    <SafeImage
+                      source={{ uri: isValidImageUri(v.banner) ? v.banner : null }}
+                      style={styles.vendorSearchImg}
+                      placeholderIcon="storefront-outline"
+                      placeholderIconSize={28}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.vendorSearchTitle} numberOfLines={1}>{v.storeName}</Text>
+                      <Text style={styles.vendorSearchSub} numberOfLines={1}>{v.address?.city || 'Local Store'}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
           </View>
         ) : (
-          /* ================== MAIN CONTENT FEED ================== */
           <>
-            {/* 1. Dynamic Merchandising Banners Carousel (Rendered only if backend has active banners) */}
+            {/* Horizontal Category Navigation Tabs Bar */}
+            {filteredCategories.length > 0 && (
+              <View style={styles.categoryTabsWrapper}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryTabsContent}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.categoryTabChip,
+                      selectedCategory === 'all' && styles.categoryTabChipActive
+                    ]}
+                    onPress={() => setSelectedCategory('all')}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="All categories"
+                  >
+                    <Ionicons
+                      name="grid-outline"
+                      size={13}
+                      color={selectedCategory === 'all' ? '#ffffff' : '#16a34a'}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text
+                      style={[
+                        styles.categoryTabChipText,
+                        selectedCategory === 'all' && styles.categoryTabChipTextActive
+                      ]}
+                    >
+                      All
+                    </Text>
+                  </TouchableOpacity>
+
+                  {filteredCategories.map((cat, idx) => {
+                    const catIdentifier = cat.slug || cat._id || cat.key || String(idx);
+                    const isSelected = selectedCategory === catIdentifier || selectedCategory === cat.slug;
+                    return (
+                      <TouchableOpacity
+                        key={String(cat._id || cat.slug || idx)}
+                        style={[
+                          styles.categoryTabChip,
+                          isSelected && styles.categoryTabChipActive
+                        ]}
+                        onPress={() => {
+                          setSelectedCategory(isSelected ? 'all' : (cat.slug || catIdentifier));
+                        }}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${cat.name} category`}
+                      >
+                        {cat.vectorIcon ? (
+                          <Ionicons
+                            name={cat.vectorIcon}
+                            size={13}
+                            color={isSelected ? '#ffffff' : (cat.accentColor || '#16a34a')}
+                            style={{ marginRight: 4 }}
+                          />
+                        ) : (
+                          <Text style={{ fontSize: 12, marginRight: 4 }}>{cat.icon || '🥦'}</Text>
+                        )}
+                        <Text
+                          style={[
+                            styles.categoryTabChipText,
+                            isSelected && styles.categoryTabChipTextActive
+                          ]}
+                        >
+                          {cat.shortName || cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Active Category Filter Tag Banner */}
+            {selectedCategory !== 'all' && (
+              <View style={styles.filterActiveBar}>
+                <View style={styles.filterActiveInfo}>
+                  <Ionicons name="funnel" size={12} color="#15803d" />
+                  <Text style={styles.filterActiveText}>
+                    Filtered: {
+                      categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name ||
+                      selectedCategory
+                    } ({feedTotal || sortedFeedProducts.length} product{sortedFeedProducts.length === 1 ? '' : 's'})
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedCategory('all')}
+                  style={styles.filterClearBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={13} color="#b91c1c" />
+                  <Text style={styles.filterClearText}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Retryable Error Banner on API Failure */}
+            {apiError && (
+              <TouchableOpacity
+                style={styles.errorBanner}
+                onPress={() => {
+                  loadHomeMetadata(false);
+                  loadFeedInitial({ search: debouncedSearch, category: selectedCategory, sort: sortBy });
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="alert-circle-outline" size={18} color="#b91c1c" />
+                <Text style={styles.errorBannerText}>{apiError}</Text>
+                <View style={styles.errorRetryBtn}>
+                  <Text style={styles.errorRetryBtnText}>Retry</Text>
+                  <Ionicons name="refresh" size={12} color="#b91c1c" />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* 1. Merchandising Banners Carousel */}
             {banners.length > 0 && (
               <View style={styles.bannerCarouselContainer}>
                 <ScrollView
@@ -747,7 +775,7 @@ export const HomeScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* 2. Compact 4-Column Category Grid (Soft 3D Claymorphic Blinkit Style) */}
+            {/* 2. Admin-Controlled 3D Category Grid (Soft 3D Claymorphic Blinkit Style) */}
             {filteredCategories.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeaderRow}>
@@ -762,7 +790,7 @@ export const HomeScreen = ({ navigation, route }) => {
 
                 <View style={styles.blinkitCategoryGrid}>
                   {filteredCategories.slice(0, 8).map((cat, idx) => {
-                    const isSelected = selectedCategory === (cat.slug || cat._id);
+                    const isSelected = selectedCategory === (cat.slug || cat._id || cat.name);
                     return (
                       <CategoryGridTile
                         key={String(cat._id || cat.slug || idx)}
@@ -770,9 +798,7 @@ export const HomeScreen = ({ navigation, route }) => {
                         isSelected={isSelected}
                         reduceMotion={reduceMotion}
                         onPress={() => {
-                          navigation.navigate('Catalog', {
-                            category: cat.slug || cat._id || cat.name
-                          });
+                          setSelectedCategory(isSelected ? 'all' : (cat.slug || cat._id || cat.name));
                         }}
                       />
                     );
@@ -781,66 +807,8 @@ export const HomeScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* 3. Filtered Category View or Curated Sections */}
-            {selectedCategory !== 'all' ? (
-              <View style={styles.sectionContainer}>
-                <View style={styles.sectionHeaderRow}>
-                  <View>
-                    <Text style={styles.sectionHeading}>
-                      {categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name || 'Category Products'}
-                    </Text>
-                    <Text style={styles.sectionSubHeading}>
-                      {displayedProducts.length} item{displayedProducts.length === 1 ? '' : 's'} available
-                    </Text>
-                  </View>
-                  {displayedProducts.length > 1 && (
-                    <View style={styles.sortPillGroup}>
-                      <TouchableOpacity
-                        style={[styles.sortPill, sortBy === 'price_low' && styles.sortPillActive]}
-                        onPress={() => setSortBy(sortBy === 'price_low' ? 'default' : 'price_low')}
-                      >
-                        <Text style={[styles.sortPillText, sortBy === 'price_low' && styles.sortPillTextActive]}>₹ Low</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.sortPill, sortBy === 'price_high' && styles.sortPillActive]}
-                        onPress={() => setSortBy(sortBy === 'price_high' ? 'default' : 'price_high')}
-                      >
-                        <Text style={[styles.sortPillText, sortBy === 'price_high' && styles.sortPillTextActive]}>₹ High</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-
-                {displayedProducts.length === 0 ? (
-                  <View style={styles.honestEmptyBox}>
-                    <Ionicons name="cube-outline" size={36} color="#94a3b8" />
-                    <Text style={styles.honestEmptyTitle}>No items currently in this category</Text>
-                    <Text style={styles.honestEmptySub}>Tap All above to browse all products.</Text>
-                    <TouchableOpacity
-                      style={styles.filterResetInlineBtn}
-                      onPress={() => setSelectedCategory('all')}
-                    >
-                      <Text style={styles.filterResetInlineBtnText}>Show All Products</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.productsGrid}>
-                    {displayedProducts.map((product) => (
-                      <View key={product._id} style={styles.productCol}>
-                        <ProductCard
-                          product={product}
-                          onPress={() => navigation.navigate('ProductDetails', { product })}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            ) : (
-              <>
-
-            {/* 3. Curated Product Sections (Promotional Rails from Backend) */}
-            {homeSections.length > 0 ? (
+            {/* 3. Curated Product Sections (Promotional Rails from Backend - visible when browsing all categories) */}
+            {selectedCategory === 'all' && homeSections.length > 0 && (
               homeSections.map((sec) => {
                 if (!sec.products || sec.products.length === 0) return null;
                 const secCatSlug = sec.category?.slug || sec.category?._id || sec.category?.name || sec.category || sec.title;
@@ -883,42 +851,161 @@ export const HomeScreen = ({ navigation, route }) => {
                   </View>
                 );
               })
-            ) : availableProducts.length > 0 ? (
-              /* All Available Products Grid */
-              <View style={styles.sectionContainer}>
-                <View style={styles.sectionHeaderRow}>
-                  <View>
-                    <Text style={styles.sectionHeading}>Daily Essentials</Text>
-                    <Text style={styles.sectionSubHeading}>Direct from inventory</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => navigation.navigate('Catalog')}>
-                    <Text style={styles.seeAllText}>View Catalog →</Text>
-                  </TouchableOpacity>
-                </View>
+            )}
 
-                <View style={styles.productsGrid}>
-                  {availableProducts.slice(0, 10).map((product) => (
-                    <View key={product._id} style={styles.productCol}>
-                      <ProductCard
-                        product={product}
-                        onPress={() => navigation.navigate('ProductDetails', { product })}
-                      />
-                    </View>
-                  ))}
-                </View>
+            {/* 4. Section Heading for the 2-Column Vertical Feed */}
+            <View style={styles.feedHeaderRow}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.sectionHeading}>
+                  {selectedCategory === 'all'
+                    ? 'Explore Catalog'
+                    : (categories.find(c => c.slug === selectedCategory || c._id === selectedCategory || c.key === selectedCategory)?.name || 'Category Products')
+                  }
+                </Text>
+                <Text style={styles.sectionSubHeading}>
+                  {selectedCategory === 'all'
+                    ? `All available items direct from local farms & merchants (${feedTotal || sortedFeedProducts.length})`
+                    : `${feedTotal || sortedFeedProducts.length} items available`
+                  }
+                </Text>
               </View>
-            ) : (
-              <View style={styles.honestEmptyBox}>
-                <Ionicons name="cart-outline" size={36} color="#94a3b8" />
-                <Text style={styles.honestEmptyTitle}>No products currently available</Text>
-                <Text style={styles.honestEmptySub}>Products added by partners will display here.</Text>
+              <View style={styles.sortPillGroup}>
+                <TouchableOpacity
+                  style={[styles.sortPill, sortBy === 'price_low' && styles.sortPillActive]}
+                  onPress={() => setSortBy(sortBy === 'price_low' ? 'default' : 'price_low')}
+                >
+                  <Text style={[styles.sortPillText, sortBy === 'price_low' && styles.sortPillTextActive]}>₹ Low</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sortPill, sortBy === 'price_high' && styles.sortPillActive]}
+                  onPress={() => setSortBy(sortBy === 'price_high' ? 'default' : 'price_high')}
+                >
+                  <Text style={[styles.sortPillText, sortBy === 'price_high' && styles.sortPillTextActive]}>₹ High</Text>
+                </TouchableOpacity>
               </View>
-            )}
-              </>
-            )}
+            </View>
           </>
         )}
-      </ScrollView>
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    if (isLoadingMoreFeed) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color="#16a34a" />
+          <Text style={styles.footerLoaderText}>Loading next 50 items...</Text>
+        </View>
+      );
+    }
+    if (loadMoreError) {
+      return (
+        <TouchableOpacity
+          style={styles.retryFooterBtn}
+          onPress={handleLoadMoreFeed}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="refresh" size={14} color="#16a34a" />
+          <Text style={styles.retryFooterText}>{loadMoreError}</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (!hasMoreFeed && sortedFeedProducts.length > 0) {
+      return (
+        <View style={styles.footerEnded}>
+          <Ionicons name="checkmark-circle-outline" size={15} color="#16a34a" style={{ marginRight: 5 }} />
+          <Text style={styles.footerEndedText}>All {sortedFeedProducts.length} items loaded</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const renderEmpty = () => {
+    if (isLoadingFeed && !isRefreshing) {
+      return (
+        <View style={styles.initialLoadingContainer}>
+          <ActivityIndicator size="small" color="#16a34a" />
+          <Text style={styles.initialLoadingText}>
+            {isSearching ? 'Searching catalog on server...' : 'Loading fresh inventory...'}
+          </Text>
+        </View>
+      );
+    }
+    if (isSearching) {
+      return (
+        <View style={styles.noSearchCard}>
+          <Ionicons name="search-outline" size={40} color="#94a3b8" />
+          <Text style={styles.noSearchTitle}>No matching products</Text>
+          <Text style={styles.noSearchSub}>
+            Try searching with keywords like "Fresh", "Milk", "Ghee", "Kheel", or "Rice"
+          </Text>
+          <TouchableOpacity style={styles.clearSearchBtn} onPress={() => setSearchQuery('')}>
+            <Text style={styles.clearSearchBtnText}>Clear Search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (selectedCategory !== 'all') {
+      return (
+        <View style={styles.honestEmptyBox}>
+          <Ionicons name="cube-outline" size={36} color="#94a3b8" />
+          <Text style={styles.honestEmptyTitle}>No items currently in this category</Text>
+          <Text style={styles.honestEmptySub}>Tap All above to browse all products.</Text>
+          <TouchableOpacity
+            style={styles.filterResetInlineBtn}
+            onPress={() => setSelectedCategory('all')}
+          >
+            <Text style={styles.filterResetInlineBtnText}>Show All Products</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.honestEmptyBox}>
+        <Ionicons name="cart-outline" size={36} color="#94a3b8" />
+        <Text style={styles.honestEmptyTitle}>No products currently available</Text>
+        <Text style={styles.honestEmptySub}>Products added by partners will display here.</Text>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <Header navigation={navigation} />
+      <ShoppingFromBanner navigation={navigation} />
+
+      {/* Single vertically virtualized container for entire Home */}
+      <FlatList
+        data={sortedFeedProducts}
+        keyExtractor={(item) => String(item._id || item.id)}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: scrollPaddingBottom }
+        ]}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        onEndReached={handleLoadMoreFeed}
+        onEndReachedThreshold={0.4}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+        ListHeaderComponent={renderHeader}
+        renderItem={renderProductItem}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
+      />
 
       {/* Sticky Bottom Cart Bar */}
       {hasActiveCart && (
@@ -1345,6 +1432,71 @@ const styles = StyleSheet.create({
   productCol: {
     width: '48%',
     marginBottom: 4
+  },
+  columnWrapper: {
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 10
+  },
+  cardWrap: {
+    flex: 1,
+    maxWidth: '48.5%',
+    minWidth: 0
+  },
+  feedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    marginTop: 6
+  },
+  searchResultHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6
+  },
+  footerLoaderText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600'
+  },
+  retryFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 10,
+    marginBottom: 12
+  },
+  retryFooterText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a'
+  },
+  footerEnded: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16
+  },
+  footerEndedText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600'
   },
   // Honest Empty State
   honestEmptyBox: {

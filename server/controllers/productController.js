@@ -187,10 +187,17 @@ export const getAllProducts = async (req, res) => {
     const totalCount = await Product.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / paging.limit) || 1;
 
+    let sortObj = { inStock: -1, createdAt: -1, _id: -1 };
+    if (req.query.sort === 'price_low' || req.query.sort === 'price_asc') {
+      sortObj = { inStock: -1, price: 1, _id: -1 };
+    } else if (req.query.sort === 'price_high' || req.query.sort === 'price_desc') {
+      sortObj = { inStock: -1, price: -1, _id: -1 };
+    }
+
     const products = await Product.find(filter)
       .populate('category', 'name slug icon type')
       .populate('vendor', 'storeName ownerName phone storeType isOpen rating minOrderValue avgPrepTimeMins')
-      .sort({ inStock: -1, createdAt: -1, _id: -1 })
+      .sort(sortObj)
       .skip(paging.skip)
       .limit(paging.limit);
 
