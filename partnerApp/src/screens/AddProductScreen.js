@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
+  RefreshControl,
   TouchableOpacity,
   TextInput,
   Image,
@@ -1580,30 +1582,165 @@ export const InventoryScreen = ({ navigation }) => {
   const isTablet = width > 600;
 
   const {
-    inventory,
+    fetchInventoryPage,
     toggleItemAvailability,
     deleteInventoryItem,
     addStockToItem,
     vendor
   } = usePartner();
 
+  const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(null);
+
   const [activeTab, setActiveTab] = useState('ALL');
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const [replenishingId, setReplenishingId] = useState(null);
   const [stockModalItem, setStockModalItem] = useState(null);
   const [stockInputVal, setStockInputVal] = useState('25');
 
   useModalFocus(Boolean(stockModalItem));
 
-  const filteredItems = inventory.filter((item) => {
-    if (activeTab === 'IN_STOCK') return item.isAvailable && (item.stock ?? item.stockQty) > 0;
-    if (activeTab === 'OUT_OF_STOCK') return !item.isAvailable || (item.stock ?? item.stockQty) <= 0;
-    return true;
-  });
+  const requestSeqRef = useRef(0);
+  const isLoadingMoreRef = useRef(false);
+
+  // 300ms search input debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Load inventory page helper
+  const loadPage = useCallback(
+    async ({ targetPage = 1, isRefresh = false, search = debouncedSearch, tab = activeTab } = {}) => {
+      const currentSeq = ++requestSeqRef.current;
+      const isFirst = targetPage === 1;
+
+      if (isFirst) {
+        if (isRefresh) {
+          setIsRefreshing(true);
+        } else {
+          setIsLoading(true);
+        }
+        setLoadMoreError(null);
+      } else {
+        if (isLoadingMoreRef.current || !hasMore) return;
+        isLoadingMoreRef.current = true;
+        setIsLoadingMore(true);
+        setLoadMoreError(null);
+      }
+
+      try {
+        const inStockFilter = tab === 'IN_STOCK' ? 'true' : tab === 'OUT_OF_STOCK' ? 'false' : null;
+        const res = await fetchInventoryPage({
+          page: targetPage,
+          limit: 50,
+          search,
+          inStock: inStockFilter
+        });
+
+        // Drop stale responses
+        if (currentSeq !== requestSeqRef.current) return;
+
+        if (res.success && Array.isArray(res.products)) {
+          if (isFirst) {
+            setItems(res.products);
+          } else {
+            // Deduplicate products using Map
+            setItems((prev) => {
+              const map = new Map();
+              prev.forEach((p) => map.set(p.id || p._id || p.productId, p));
+              res.products.forEach((p) => map.set(p.id || p._id || p.productId, p));
+              return Array.from(map.values());
+            });
+          }
+          setPage(res.page);
+          setHasMore(Boolean(res.hasMore));
+          setTotalCount(res.total);
+          setLoadMoreError(null);
+        } else {
+          if (isFirst) {
+            setItems([]);
+            setTotalCount(0);
+            setHasMore(false);
+            setLoadMoreError(res?.message || 'Failed to load inventory.');
+          } else {
+            // Preserve loaded products on failure
+            setLoadMoreError(res?.message || 'Failed to load more products.');
+          }
+        }
+      } catch (err) {
+        if (currentSeq !== requestSeqRef.current) return;
+        if (isFirst) {
+          setLoadMoreError('Network error loading inventory. Tap to retry.');
+        } else {
+          setLoadMoreError('Network error loading more products.');
+        }
+      } finally {
+        if (currentSeq === requestSeqRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+          setIsLoadingMore(false);
+          isLoadingMoreRef.current = false;
+        }
+      }
+    },
+    [fetchInventoryPage, debouncedSearch, activeTab, hasMore]
+  );
+
+  // Trigger page 1 fetch when debounced search, active tab, or vendor changes
+  useEffect(() => {
+    loadPage({ targetPage: 1, isRefresh: false, search: debouncedSearch, tab: activeTab });
+  }, [debouncedSearch, activeTab, vendor?._id]);
+
+  const handleRefresh = useCallback(() => {
+    loadPage({ targetPage: 1, isRefresh: true, search: debouncedSearch, tab: activeTab });
+  }, [loadPage, debouncedSearch, activeTab]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!isLoading && !isRefreshing && !isLoadingMoreRef.current && hasMore) {
+      loadPage({ targetPage: page + 1, isRefresh: false, search: debouncedSearch, tab: activeTab });
+    }
+  }, [loadPage, isLoading, isRefreshing, hasMore, page, debouncedSearch, activeTab]);
+
+  const handleToggleAvailability = async (itemId) => {
+    setItems((prev) =>
+      prev.map((i) => {
+        const id = i.id || i._id || i.productId;
+        return id === itemId ? { ...i, isAvailable: !i.isAvailable } : i;
+      })
+    );
+    await toggleItemAvailability(itemId);
+  };
 
   const handleQuickAdd = async (itemId, amt) => {
     setReplenishingId(itemId);
     try {
-      await addStockToItem(itemId, amt);
+      const res = await addStockToItem(itemId, amt);
+      if (res?.success && res.product) {
+        setItems((prev) =>
+          prev.map((i) => {
+            const id = i.id || i._id || i.productId;
+            return id === itemId
+              ? {
+                  ...i,
+                  stock: res.product.stockQty,
+                  stockQty: res.product.stockQty,
+                  isAvailable: res.product.inStock
+                }
+              : i;
+          })
+        );
+      }
     } finally {
       setReplenishingId(null);
     }
@@ -1619,11 +1756,222 @@ export const InventoryScreen = ({ navigation }) => {
     try {
       const current = stockModalItem.stock ?? stockModalItem.stockQty ?? 0;
       const diff = qty - current;
-      await addStockToItem(targetId, diff);
+      const res = await addStockToItem(targetId, diff);
+      if (res?.success && res.product) {
+        setItems((prev) =>
+          prev.map((i) => {
+            const id = i.id || i._id || i.productId;
+            return id === targetId
+              ? {
+                  ...i,
+                  stock: res.product.stockQty,
+                  stockQty: res.product.stockQty,
+                  isAvailable: res.product.inStock
+                }
+              : i;
+          })
+        );
+      }
       setStockModalItem(null);
     } finally {
       setReplenishingId(null);
     }
+  };
+
+  const handleDeleteListing = (itemId, itemName) => {
+    showAlert('Remove Product', `Delete "${itemName}" from store catalog?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setItems((prev) => prev.filter((i) => (i.id || i._id || i.productId) !== itemId));
+          setTotalCount((prev) => Math.max(0, prev - 1));
+          await deleteInventoryItem(itemId);
+        }
+      }
+    ]);
+  };
+
+  const renderItem = ({ item }) => {
+    const itemId = item.id || item._id || item.productId;
+    const stockQty = item.stock ?? item.stockQty ?? 0;
+    const isBusy = replenishingId === itemId;
+
+    return (
+      <GlassCard key={itemId} style={styles.inventoryCard} showSheen={true}>
+        <View style={styles.invCardRow}>
+          {item.image ? (
+            <Image
+              source={{ uri: resolveMediaUrl(item.image) || item.image }}
+              style={styles.invThumb}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={styles.invThumbFallback}>
+              <Ionicons name="basket-outline" size={24} color="#94a3b8" />
+            </View>
+          )}
+
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.invName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.invPrice}>
+              ₹{item.price} <Text style={styles.invUnit}>/ {item.unit || 'pack'}</Text>
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              <Text
+                style={[
+                  styles.stockBadgeText,
+                  { color: stockQty > 0 ? '#16a34a' : '#dc2626' }
+                ]}
+              >
+                Stock: {stockQty} packs ({item.unit || 'pack'})
+              </Text>
+              {item.subCategory ? (
+                <View style={styles.subCatBadge}>
+                  <Ionicons name="pricetag-outline" size={10} color="#0284c7" />
+                  <Text style={styles.subCatBadgeText}>{item.subCategory}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {/* One-Tap Availability Toggle */}
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <Switch
+              value={item.isAvailable}
+              onValueChange={() => handleToggleAvailability(itemId)}
+              trackColor={{ false: '#cbd5e1', true: '#bbf7d0' }}
+              thumbColor={item.isAvailable ? '#16a34a' : '#94a3b8'}
+            />
+            <Text
+              style={[
+                styles.availLabel,
+                { color: item.isAvailable ? '#16a34a' : '#64748b' }
+              ]}
+            >
+              {item.isAvailable ? 'In Stock' : 'Hidden'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stock Controls & Actions Bar */}
+        <View style={styles.invActionsRow}>
+          <View style={styles.quickStockRow}>
+            <Text style={styles.quickStockLabel}>+Add:</Text>
+            {[10, 25, 50].map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={styles.quickAddChip}
+                onPress={() => handleQuickAdd(itemId, amt)}
+                disabled={isBusy}
+              >
+                <Text style={styles.quickAddText}>+{amt}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={styles.editStockChip}
+              onPress={() => {
+                setStockModalItem(item);
+                setStockInputVal(String(stockQty));
+              }}
+            >
+              <Ionicons name="pencil" size={12} color="#0284c7" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <TouchableOpacity
+              style={styles.editListingBtn}
+              onPress={() => {
+                safeBlurActiveElement();
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                  const pId = item.id || item._id || item.productId;
+                  try {
+                    const u = new URL(window.location.href);
+                    u.searchParams.set('screen', 'AddProduct');
+                    if (pId) u.searchParams.set('productId', pId);
+                    window.history.pushState({}, '', u.toString());
+                  } catch {}
+                }
+                navigation.navigate('AddProduct', { product: item });
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="pencil-outline" size={16} color="#0284c7" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.deleteListingBtn}
+              onPress={() => handleDeleteListing(itemId, item.name)}
+            >
+              <Ionicons name="trash-outline" size={16} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </GlassCard>
+    );
+  };
+
+  const renderFooter = () => {
+    if (isLoadingMore) {
+      return (
+        <View style={styles.invFooterLoading}>
+          <ActivityIndicator size="small" color="#16a34a" />
+          <Text style={styles.invFooterText}>Loading next 50 products...</Text>
+        </View>
+      );
+    }
+    if (loadMoreError) {
+      return (
+        <TouchableOpacity
+          style={styles.invFooterRetryBtn}
+          onPress={() => loadPage({ targetPage: page + 1, isRefresh: false, search: debouncedSearch, tab: activeTab })}
+        >
+          <Ionicons name="reload-outline" size={14} color="#16a34a" />
+          <Text style={styles.invFooterRetryText}>Failed to load more. Tap to retry</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (!hasMore && items.length > 0) {
+      return (
+        <View style={styles.invFooterEnd}>
+          <Text style={styles.invFooterEndText}>All {items.length} products loaded</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const renderEmpty = () => {
+    if (isLoading) {
+      return (
+        <View style={{ paddingVertical: 48, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#16a34a" />
+          <Text style={{ marginTop: 12, fontSize: 13, color: '#64748b' }}>Loading inventory...</Text>
+        </View>
+      );
+    }
+    return (
+      <GlassCard style={styles.emptyInventoryCard}>
+        <Ionicons name="cube-outline" size={44} color="#94a3b8" />
+        <Text style={styles.emptyInvTitle}>No items found</Text>
+        <Text style={styles.emptyInvSub}>
+          {searchInput.trim()
+            ? `No products match "${searchInput.trim()}". Try clearing search.`
+            : 'Use "+ Add Listing" to publish farm produce or kitchen meals.'}
+        </Text>
+        {searchInput.trim() ? (
+          <TouchableOpacity
+            style={[styles.invClearSearchBtn, { marginTop: 12 }]}
+            onPress={() => setSearchInput('')}
+          >
+            <Text style={styles.invClearSearchText}>Clear Search</Text>
+          </TouchableOpacity>
+        ) : null}
+      </GlassCard>
+    );
   };
 
   return (
@@ -1634,7 +1982,9 @@ export const InventoryScreen = ({ navigation }) => {
       {/* Header */}
       <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20) + 10 }]}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerBarTitle}>My Store Catalog ({inventory.length})</Text>
+          <Text style={styles.headerBarTitle}>
+            My Store Catalog {totalCount ? `(${totalCount})` : ''}
+          </Text>
           <Text style={styles.headerBarSub}>{vendor?.storeName || 'Merchant Store'}</Text>
         </View>
         <TouchableOpacity
@@ -1650,26 +2000,47 @@ export const InventoryScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Server-Side Search Bar */}
+      <View style={styles.invSearchContainer}>
+        <GlassCard style={styles.invSearchBar} showSheen={false} borderRadius={14}>
+          <Ionicons name="search" size={18} color="#64748b" />
+          <TextInput
+            style={styles.invSearchInput}
+            placeholder="Search catalog by name, category, tags..."
+            placeholderTextColor="#94a3b8"
+            value={searchInput}
+            onChangeText={setSearchInput}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+          {searchInput ? (
+            <TouchableOpacity onPress={() => setSearchInput('')} style={styles.invSearchClear}>
+              <Ionicons name="close-circle" size={16} color="#94a3b8" />
+            </TouchableOpacity>
+          ) : null}
+        </GlassCard>
+      </View>
+
       {/* Filter Tabs */}
       <View style={styles.filterTabsContainer}>
         <GlassCard style={styles.filterGlassBar} showSheen={false} borderRadius={16}>
           <View style={styles.filterTabsRow}>
-            {['ALL', 'IN_STOCK', 'OUT_OF_STOCK'].map((tab) => {
-              const isActive = activeTab === tab;
-              const label =
-                tab === 'ALL'
-                  ? `All (${inventory.length})`
-                  : tab === 'IN_STOCK'
-                  ? `In Stock (${inventory.filter((i) => i.isAvailable && (i.stock ?? i.stockQty) > 0).length})`
-                  : `Out of Stock (${inventory.filter((i) => !i.isAvailable || (i.stock ?? i.stockQty) <= 0).length})`;
+            {[
+              { id: 'ALL', label: 'All' },
+              { id: 'IN_STOCK', label: 'In Stock' },
+              { id: 'OUT_OF_STOCK', label: 'Out of Stock' }
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
               return (
                 <TouchableOpacity
-                  key={tab}
+                  key={tab.id}
                   style={[styles.filterTabChip, isActive && styles.filterTabChipActive]}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => setActiveTab(tab.id)}
                 >
                   <Text style={[styles.filterTabChipText, isActive && styles.filterTabChipTextActive]}>
-                    {label}
+                    {tab.label}
                   </Text>
                 </TouchableOpacity>
               );
@@ -1678,8 +2049,23 @@ export const InventoryScreen = ({ navigation }) => {
         </GlassCard>
       </View>
 
-      {/* Catalog Items List */}
-      <ScrollView
+      {/* Virtualized Catalog FlatList */}
+      <FlatList
+        data={items}
+        keyExtractor={(item) => String(item.id || item._id || item.productId)}
+        renderItem={renderItem}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.4}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#16a34a"
+            colors={['#16a34a']}
+          />
+        }
         contentContainerStyle={[
           styles.scrollContent,
           {
@@ -1690,140 +2076,7 @@ export const InventoryScreen = ({ navigation }) => {
           }
         ]}
         showsVerticalScrollIndicator={false}
-      >
-        {filteredItems.length === 0 ? (
-          <GlassCard style={styles.emptyInventoryCard}>
-            <Ionicons name="cube-outline" size={44} color="#94a3b8" />
-            <Text style={styles.emptyInvTitle}>No items in this category</Text>
-            <Text style={styles.emptyInvSub}>
-              Use "+ Add Listing" to publish farm produce or kitchen meals.
-            </Text>
-          </GlassCard>
-        ) : (
-          filteredItems.map((item) => {
-            const itemId = item.id || item._id || item.productId;
-            const stockQty = item.stock ?? item.stockQty ?? 0;
-            const isAvailable = item.isAvailable && stockQty > 0;
-            const isBusy = replenishingId === itemId;
-
-            return (
-              <GlassCard key={itemId} style={styles.inventoryCard} showSheen={true}>
-                <View style={styles.invCardRow}>
-                  {item.image ? (
-                    <Image source={{ uri: resolveMediaUrl(item.image) || item.image }} style={styles.invThumb} resizeMode="contain" />
-                  ) : (
-                    <View style={styles.invThumbFallback}>
-                      <Ionicons name="basket-outline" size={24} color="#94a3b8" />
-                    </View>
-                  )}
-
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.invName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.invPrice}>
-                      ₹{item.price} <Text style={styles.invUnit}>/ {item.unit || 'pack'}</Text>
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                      <Text
-                        style={[
-                          styles.stockBadgeText,
-                          { color: stockQty > 0 ? '#16a34a' : '#dc2626' }
-                        ]}
-                      >
-                        Stock: {stockQty} packs ({item.unit || 'pack'})
-                      </Text>
-                      {item.subCategory ? (
-                        <View style={styles.subCatBadge}>
-                          <Ionicons name="pricetag-outline" size={10} color="#0284c7" />
-                          <Text style={styles.subCatBadgeText}>{item.subCategory}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-
-                  {/* One-Tap Availability Toggle */}
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <Switch
-                      value={item.isAvailable}
-                      onValueChange={() => toggleItemAvailability(itemId)}
-                      trackColor={{ false: '#cbd5e1', true: '#bbf7d0' }}
-                      thumbColor={item.isAvailable ? '#16a34a' : '#94a3b8'}
-                    />
-                    <Text
-                      style={[
-                        styles.availLabel,
-                        { color: item.isAvailable ? '#16a34a' : '#64748b' }
-                      ]}
-                    >
-                      {item.isAvailable ? 'In Stock' : 'Hidden'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Stock Controls & Actions Bar */}
-                <View style={styles.invActionsRow}>
-                  <View style={styles.quickStockRow}>
-                    <Text style={styles.quickStockLabel}>+Add:</Text>
-                    {[10, 25, 50].map((amt) => (
-                      <TouchableOpacity
-                        key={amt}
-                        style={styles.quickAddChip}
-                        onPress={() => handleQuickAdd(itemId, amt)}
-                        disabled={isBusy}
-                      >
-                        <Text style={styles.quickAddText}>+{amt}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                      style={styles.editStockChip}
-                      onPress={() => {
-                        setStockModalItem(item);
-                        setStockInputVal(String(stockQty));
-                      }}
-                    >
-                      <Ionicons name="pencil" size={12} color="#0284c7" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <TouchableOpacity
-                      style={styles.editListingBtn}
-                      onPress={() => {
-                        safeBlurActiveElement();
-                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                          const pId = item.id || item._id || item.productId;
-                          try {
-                            const u = new URL(window.location.href);
-                            u.searchParams.set('screen', 'AddProduct');
-                            if (pId) u.searchParams.set('productId', pId);
-                            window.history.pushState({}, '', u.toString());
-                          } catch {}
-                        }
-                        navigation.navigate('AddProduct', { product: item });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="pencil-outline" size={16} color="#0284c7" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteListingBtn}
-                      onPress={() => {
-                        showAlert('Remove Product', `Delete "${item.name}" from store catalog?`, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Delete', style: 'destructive', onPress: () => deleteInventoryItem(itemId) }
-                        ]);
-                      }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </GlassCard>
-            );
-          })
-        )}
-      </ScrollView>
+      />
 
       {/* Custom Stock Modal */}
       <Modal
@@ -2676,6 +2929,75 @@ const styles = StyleSheet.create({
   },
 
   // INVENTORY STYLES
+  invSearchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8
+  },
+  invSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    borderRadius: 14
+  },
+  invSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0f172a',
+    marginLeft: 8,
+    padding: 0
+  },
+  invSearchClear: {
+    padding: 4
+  },
+  invFooterLoading: {
+    paddingVertical: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
+  },
+  invFooterText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500'
+  },
+  invFooterRetryBtn: {
+    marginVertical: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  invFooterRetryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a'
+  },
+  invFooterEnd: {
+    paddingVertical: 20,
+    alignItems: 'center'
+  },
+  invFooterEndText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#94a3b8'
+  },
+  invClearSearchBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(22, 163, 74, 0.12)'
+  },
+  invClearSearchText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a'
+  },
   filterTabsContainer: {
     paddingHorizontal: 16,
     marginBottom: 12

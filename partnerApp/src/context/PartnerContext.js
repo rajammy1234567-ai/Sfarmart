@@ -142,16 +142,68 @@ export const PartnerProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch Vendor Inventory Products (Public vendor catalog)
+  // Fetch a single page of Vendor Inventory Products (bounded, paginated, server-searchable)
+  const fetchInventoryPage = useCallback(async ({ page = 1, limit = 50, search = '', inStock = null, category = null, vId = null } = {}) => {
+    const id = vId || sessionRef.current.id;
+    if (!id) return { success: false, products: [], hasMore: false, total: 0, totalPages: 1 };
+    try {
+      const qParams = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (search && search.trim()) qParams.append('search', search.trim());
+      if (inStock === 'true' || inStock === true) qParams.append('inStock', 'true');
+      if (inStock === 'false' || inStock === false) qParams.append('inStock', 'false');
+      if (category && category !== 'ALL') qParams.append('category', category);
+
+      const res = await fetch(`${API_BASE_URL}/vendors/${id}/products?${qParams.toString()}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.products)) {
+        const mapped = data.products.map((p) => {
+          const update = stockUpdatesRef.current.get(p._id);
+          const useLatest = new Date(update?.updatedAt || 0).getTime() > new Date(p.updatedAt || 0).getTime();
+          return {
+            id: p._id,
+            productId: p._id,
+            name: p.name,
+            category: p.category?.name || 'General',
+            categoryId: p.category?._id,
+            subCategory: p.subCategory || '',
+            price: p.price,
+            mrp: p.mrp || p.price,
+            unit: p.unit,
+            stock: useLatest ? update.stockQty : p.stockQty,
+            stockQty: useLatest ? update.stockQty : p.stockQty,
+            isAvailable: useLatest ? update.inStock : p.inStock,
+            image: p.image,
+            description: p.description,
+            isVeg: p.isVeg !== undefined ? p.isVeg : true,
+            createdAt: p.createdAt
+          };
+        });
+        return {
+          success: true,
+          products: mapped,
+          page: Number(data.page || page),
+          limit: Number(data.limit || limit),
+          total: Number(data.total !== undefined ? data.total : mapped.length),
+          totalPages: Number(data.totalPages || 1),
+          hasMore: data.hasMore !== undefined ? Boolean(data.hasMore) : mapped.length === (data.limit || limit),
+          count: mapped.length
+        };
+      }
+      return { success: false, products: [], hasMore: false, total: 0, totalPages: 1, message: data.message || 'Failed to fetch inventory' };
+    } catch (e) {
+      console.warn('Failed to fetch inventory page (offline/network):', e);
+      return { success: false, products: [], hasMore: false, total: 0, totalPages: 1, error: e };
+    }
+  }, []);
+
+  // Fetch Vendor Inventory Products (Public vendor catalog initial 50 items)
   const fetchInventory = useCallback(async (vId) => {
     const id = vId || sessionRef.current.id;
     if (!id) return;
     try {
       const epoch = authEpochRef.current;
-      const data = await readFlight.current(`inventory:${epoch}:${id}`, () => collectPages(async ({ page, limit }) => {
-        const res = await fetch(`${API_BASE_URL}/vendors/${id}/products?page=${page}&limit=${limit}`);
-        return res.json();
-      }, 'products'));
+      const res = await fetch(`${API_BASE_URL}/vendors/${id}/products?page=1&limit=50`);
+      const data = await res.json();
       if (sessionRef.current.id !== id || authEpochRef.current !== epoch) return;
       if (data.success && Array.isArray(data.products)) {
         const mapped = data.products.map((p) => {
@@ -172,7 +224,8 @@ export const PartnerProvider = ({ children }) => {
             isAvailable: useLatest ? update.inStock : p.inStock,
             image: p.image,
             description: p.description,
-            isVeg: p.isVeg !== undefined ? p.isVeg : true
+            isVeg: p.isVeg !== undefined ? p.isVeg : true,
+            createdAt: p.createdAt
           };
         });
         setInventory(mapped);
@@ -921,7 +974,7 @@ export const PartnerProvider = ({ children }) => {
 
   // Toggle in-stock / out-of-stock
   const toggleItemAvailability = async (itemId) => {
-    if (!token) return;
+    if (!token) return { success: false, message: 'Not authenticated' };
     const currentItem = inventory.find((i) => i.id === itemId || i._id === itemId || i.productId === itemId);
     const newStatus = currentItem ? !currentItem.isAvailable : true;
 
@@ -941,8 +994,10 @@ export const PartnerProvider = ({ children }) => {
       if (res.status === 401) {
         await handleSessionExpired('Stock toggle returned 401');
       }
+      return { success: true, newStatus };
     } catch (e) {
       console.warn('Stock status update failed on server:', e);
+      return { success: false, error: e };
     }
   };
 
@@ -1019,6 +1074,7 @@ export const PartnerProvider = ({ children }) => {
         updateOrderStatus,
         inventory,
         fetchInventory,
+        fetchInventoryPage,
         uploadProductImage,
         uploadShopPhoto,
         removeShopPhoto,

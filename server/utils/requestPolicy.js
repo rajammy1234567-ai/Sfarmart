@@ -6,8 +6,8 @@ export function boundedInteger(value, fallback, min, max) {
   return Number.isSafeInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 }
 
-export function pagination(query = {}, defaultLimit = 100) {
-  const limit = boundedInteger(query.limit, defaultLimit, 1, 200);
+export function pagination(query = {}, defaultLimit = 100, maxLimit = 200) {
+  const limit = boundedInteger(query.limit, defaultLimit, 1, maxLimit);
   const page = boundedInteger(query.page, 1, 1, Math.floor(10000 / limit) + 1);
   return { page, limit, skip: Math.min((page - 1) * limit, 10000) };
 }

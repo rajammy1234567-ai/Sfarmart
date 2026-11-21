@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,8 @@ import {
   FlatList,
   TextInput,
   ActivityIndicator,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,49 +30,170 @@ export const CatalogScreen = ({ navigation }) => {
   const [categories, setCategories] = useState([]);
   const [selectedCat, setSelectedCat] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const requestSeqRef = useRef(0);
+  const searchTimerRef = useRef(null);
 
-  const loadData = async () => {
+  // Debounce search query input (300ms)
+  const handleSearchChange = (text) => {
+    setSearchQuery(text);
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(text.trim());
+    }, 300);
+  };
+
+  const handleClearSearch = () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setSearchQuery('');
+    setDebouncedSearch('');
+  };
+
+  // Load initial page (page 1) whenever category filter or debounced search changes
+  useEffect(() => {
+    loadInitialPage();
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [debouncedSearch, selectedCat]);
+
+  const loadInitialPage = async () => {
+    const seq = ++requestSeqRef.current;
+    setIsLoading(true);
+    setError(null);
+    setLoadMoreError(null);
+
     try {
-      setIsLoading(true);
-      setError(null);
       const [prodRes, catRes] = await Promise.all([
-        apiService.getProducts(),
-        apiService.getCategories()
+        apiService.getProducts({
+          page: 1,
+          limit: 50,
+          search: debouncedSearch || undefined,
+          category: selectedCat !== 'all' ? selectedCat : undefined
+        }),
+        categories.length === 0 ? apiService.getCategories() : Promise.resolve(null)
       ]);
-      if (prodRes && prodRes.success && Array.isArray(prodRes.products)) {
-        setProducts(prodRes.products);
-      } else if (Array.isArray(prodRes)) {
-        setProducts(prodRes);
-      } else {
-        setProducts([]);
-      }
+
+      if (seq !== requestSeqRef.current) return; // Drop stale response
 
       if (catRes && catRes.success && Array.isArray(catRes.categories)) {
         setCategories(catRes.categories);
       }
+
+      if (prodRes && prodRes.success && Array.isArray(prodRes.products)) {
+        setProducts(prodRes.products);
+        setPage(1);
+        setTotalCount(typeof prodRes.total === 'number' ? prodRes.total : prodRes.products.length);
+        setHasMore(Boolean(prodRes.hasMore));
+      } else if (Array.isArray(prodRes)) {
+        setProducts(prodRes);
+        setPage(1);
+        setTotalCount(prodRes.length);
+        setHasMore(false);
+      } else {
+        setProducts([]);
+        setTotalCount(0);
+        setHasMore(false);
+      }
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       console.warn('Failed to load catalog products:', err);
       setError('Could not load products. Please check connection.');
     } finally {
-      setIsLoading(false);
+      if (seq === requestSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
-  const filteredProducts = products.filter((p) => {
-    if (p.isActive === false || p.isPublished === false) return false;
-    if (p.vendor?.isActive === false || p.vendor?.isApproved === false) return false;
-    const vId = (p.vendor?._id || p.vendor?.id || String(p.vendor || '')).toString();
-    if (vId === '6aea07db1cf98f83bee27ee4' || p.vendor?.storeName?.toLowerCase().includes('controlled verification')) return false;
-    const matchesCat = selectedCat === 'all' || p.category === selectedCat || p.category?._id === selectedCat || p.category?.slug === selectedCat;
-    const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
+  // Infinite scroll: fetch next 50 products near bottom
+  const handleLoadMore = async () => {
+    if (!hasMore || isLoadingMore || isLoading || isRefreshing) return;
+    setIsLoadingMore(true);
+    setLoadMoreError(null);
+    const nextPage = page + 1;
+    const seq = requestSeqRef.current;
+
+    try {
+      const res = await apiService.getProducts({
+        page: nextPage,
+        limit: 50,
+        search: debouncedSearch || undefined,
+        category: selectedCat !== 'all' ? selectedCat : undefined
+      });
+
+      if (seq !== requestSeqRef.current) return;
+
+      if (res && res.success && Array.isArray(res.products)) {
+        setProducts((prev) => {
+          const map = new Map();
+          prev.forEach((p) => map.set(p._id || p.id, p));
+          res.products.forEach((p) => map.set(p._id || p.id, p));
+          return Array.from(map.values());
+        });
+        setPage(nextPage);
+        setHasMore(Boolean(res.hasMore));
+        if (typeof res.total === 'number') setTotalCount(res.total);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      if (seq !== requestSeqRef.current) return;
+      console.warn('Failed to load more products:', err);
+      setLoadMoreError('Could not load more items. Tap to retry.');
+    } finally {
+      if (seq === requestSeqRef.current) {
+        setIsLoadingMore(false);
+      }
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await loadInitialPage();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const renderFooter = () => {
+    if (isLoadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.footerLoaderText}>Loading next 50 items...</Text>
+        </View>
+      );
+    }
+    if (loadMoreError) {
+      return (
+        <TouchableOpacity onPress={handleLoadMore} style={styles.retryFooterBtn} activeOpacity={0.8}>
+          <Ionicons name="refresh" size={16} color={colors.primary} />
+          <Text style={styles.retryFooterText}>{loadMoreError}</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (!hasMore && products.length > 0) {
+      return (
+        <View style={styles.footerEnded}>
+          <Text style={styles.footerEndedText}>All {products.length} products loaded</Text>
+        </View>
+      );
+    }
+    return null;
+  };
 
   return (
     <View style={styles.container}>
@@ -85,15 +207,18 @@ export const CatalogScreen = ({ navigation }) => {
           placeholder="Search produce, dairy, bakery..."
           placeholderTextColor={colors.textMuted}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={handleSearchChange}
+          returnKeyType="search"
+          autoCorrect={false}
         />
         {searchQuery.length > 0 && (
-          <Ionicons
-            name="close-circle"
-            size={18}
-            color={colors.textMuted}
-            onPress={() => setSearchQuery('')}
-          />
+          <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons
+              name="close-circle"
+              size={18}
+              color={colors.textMuted}
+            />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -101,12 +226,17 @@ export const CatalogScreen = ({ navigation }) => {
         <CategoryChip
           categories={categories}
           selectedCategory={selectedCat}
-          onSelectCategory={setSelectedCat}
+          onSelectCategory={(cat) => {
+            setSelectedCat(cat);
+          }}
         />
       )}
 
       <View style={styles.countRow}>
-        <Text style={styles.countText}>{filteredProducts.length} items available</Text>
+        <Text style={styles.countText}>
+          {totalCount > 0 ? `${totalCount} items available` : `${products.length} items available`}
+          {debouncedSearch ? ` for "${debouncedSearch}"` : ''}
+        </Text>
       </View>
 
       {isLoading ? (
@@ -118,14 +248,14 @@ export const CatalogScreen = ({ navigation }) => {
         <View style={styles.emptyContainer}>
           <Ionicons name="cloud-offline-outline" size={48} color={colors.textMuted} />
           <Text style={styles.emptyText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={loadData}>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadInitialPage}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <FlatList
           style={styles.flatList}
-          data={filteredProducts}
+          data={products}
           keyExtractor={(item) => item._id || item.id}
           numColumns={2}
           columnWrapperStyle={styles.row}
@@ -134,6 +264,15 @@ export const CatalogScreen = ({ navigation }) => {
             { paddingBottom: getScrollBottomPadding(insets, false) }
           ]}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.4}
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          ListFooterComponent={renderFooter}
           renderItem={({ item }) => (
             <View style={styles.cardWrap}>
               <ProductCard 

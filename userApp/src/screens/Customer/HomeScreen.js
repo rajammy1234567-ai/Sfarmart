@@ -242,7 +242,7 @@ export const HomeScreen = ({ navigation, route }) => {
       const [catResult, vendResult, prodResult, banResult, secResult] = await Promise.allSettled([
         apiService.getHomeCategories(),
         apiService.getVendors(),
-        apiService.getProducts(),
+        apiService.getProducts({ limit: 16, inStockOnly: 'true' }),
         apiService.getBanners ? apiService.getBanners() : Promise.resolve({ success: true, banners: [] }),
         apiService.getHomeSections ? apiService.getHomeSections() : Promise.resolve({ success: true, sections: [] })
       ]);

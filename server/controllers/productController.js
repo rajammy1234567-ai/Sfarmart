@@ -93,8 +93,8 @@ export const syncVendorCategories = async (vendorId) => {
 // @route   GET /api/products
 export const getAllProducts = async (req, res) => {
   try {
-    const paging = pagination(req.query);
-    const { category, vendor, search, isVeg, inStockOnly } = req.query;
+    const paging = pagination(req.query, 50, 50);
+    const { category, vendor, search, subCategory, isVeg, inStockOnly, inStock } = req.query;
     // Active & approved non-test vendor discovery
     const activeVendors = await Vendor.find({
       isActive: true,
@@ -110,37 +110,52 @@ export const getAllProducts = async (req, res) => {
       vendor: { $in: activeVendors }
     };
 
-    // Search query
+    const andClauses = [];
+
+    // Server-side search query across name, subCategory, tags
     if (search && search.trim()) {
-      filter.$text = { $search: search.trim() };
+      const cleanSearch = search.trim();
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      andClauses.push({
+        $or: [
+          { name: { $regex: escaped, $options: 'i' } },
+          { subCategory: { $regex: escaped, $options: 'i' } },
+          { tags: { $regex: escaped, $options: 'i' } }
+        ]
+      });
     }
 
     // Category filter (support ObjectId or slug)
     // Empty/unknown category filters must return 0 results and never show unrelated data
-    if (category && category !== 'all') {
+    if (category && category !== 'all' && category !== 'ALL') {
       if (mongoose.isValidObjectId(category)) {
         const catDoc = await Category.findOne({ _id: category, isActive: true });
         if (catDoc) {
           filter.category = catDoc._id;
         } else {
-          return res.json({ success: true, count: 0, products: [] });
+          return res.json({ success: true, page: paging.page, limit: paging.limit, total: 0, totalPages: 1, hasMore: false, count: 0, products: [] });
         }
       } else {
         const catDoc = await Category.findOne({ slug: category.toLowerCase().trim(), isActive: true });
         if (catDoc) {
           filter.category = catDoc._id;
         } else {
-          return res.json({ success: true, count: 0, products: [] });
+          return res.json({ success: true, page: paging.page, limit: paging.limit, total: 0, totalPages: 1, hasMore: false, count: 0, products: [] });
         }
       }
     }
 
+    // SubCategory filter
+    if (subCategory && subCategory !== 'all' && subCategory !== 'ALL') {
+      filter.subCategory = subCategory;
+    }
+
     // Vendor filter
-    if (vendor && vendor !== 'all') {
+    if (vendor && vendor !== 'all' && vendor !== 'ALL') {
       if (mongoose.isValidObjectId(vendor)) {
         filter.vendor = vendor;
       } else {
-        return res.json({ success: true, count: 0, products: [] });
+        return res.json({ success: true, page: paging.page, limit: paging.limit, total: 0, totalPages: 1, hasMore: false, count: 0, products: [] });
       }
     }
 
@@ -148,22 +163,38 @@ export const getAllProducts = async (req, res) => {
       filter.isVeg = isVeg === 'true';
     }
 
-    if (inStockOnly === 'true') {
+    if (inStockOnly === 'true' || inStock === 'true') {
       filter.inStock = true;
       filter.stockQty = { $gt: 0 };
+    } else if (inStock === 'false') {
+      andClauses.push({
+        $or: [{ inStock: false }, { stockQty: { $lte: 0 } }]
+      });
     }
+
+    if (andClauses.length > 0) {
+      filter.$and = andClauses;
+    }
+
+    const totalCount = await Product.countDocuments(filter);
+    const totalPages = Math.ceil(totalCount / paging.limit) || 1;
 
     const products = await Product.find(filter)
       .populate('category', 'name slug icon type')
       .populate('vendor', 'storeName ownerName phone storeType isOpen rating minOrderValue avgPrepTimeMins')
-      .sort({ inStock: -1, createdAt: -1, _id: 1 })
+      .sort({ inStock: -1, createdAt: -1, _id: -1 })
       .skip(paging.skip)
       .limit(paging.limit);
+
+    const hasMore = (paging.skip + products.length) < totalCount;
 
     res.json({
       success: true,
       page: paging.page,
       limit: paging.limit,
+      total: totalCount,
+      totalPages,
+      hasMore,
       count: products.length,
       products: products.map((p) => formatProductResponse(p, req))
     });
@@ -198,11 +229,11 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// @desc    Get products by vendor ID
+// @desc    Get products by vendor ID with pagination and search
 // @route   GET /api/products/vendor/:vendorId or GET /api/vendors/:id/products
 export const getVendorProducts = async (req, res) => {
   try {
-    const paging = pagination(req.query);
+    const paging = pagination(req.query, 50, 50);
     let vendorId = req.params.vendorId || req.params.id;
 
     // If 'default_vendor' or empty, find first active vendor
@@ -212,23 +243,70 @@ export const getVendorProducts = async (req, res) => {
     }
 
     if (!vendorId || !mongoose.isValidObjectId(vendorId)) {
-      return res.json({ success: true, count: 0, products: [] });
+      return res.json({ success: true, page: paging.page, limit: paging.limit, total: 0, totalPages: 1, hasMore: false, count: 0, products: [] });
     }
 
-    const totalCount = await Product.countDocuments({ vendor: vendorId, isActive: true });
+    const filter = { vendor: vendorId, isActive: true, isPublished: { $ne: false } };
+    const { search, category, subCategory, inStock } = req.query;
+    const andClauses = [];
 
-    const products = await Product.find({ vendor: vendorId, isActive: true })
+    if (search && search.trim()) {
+      const cleanSearch = search.trim();
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      andClauses.push({
+        $or: [
+          { name: { $regex: escaped, $options: 'i' } },
+          { subCategory: { $regex: escaped, $options: 'i' } },
+          { tags: { $regex: escaped, $options: 'i' } }
+        ]
+      });
+    }
+
+    if (category && category !== 'all' && category !== 'ALL') {
+      if (mongoose.isValidObjectId(category)) {
+        filter.category = category;
+      } else {
+        const catDoc = await Category.findOne({ slug: category.toLowerCase().trim() });
+        if (catDoc) filter.category = catDoc._id;
+      }
+    }
+
+    if (subCategory && subCategory !== 'all' && subCategory !== 'ALL') {
+      filter.subCategory = subCategory;
+    }
+
+    if (inStock === 'true') {
+      filter.inStock = true;
+      filter.stockQty = { $gt: 0 };
+    } else if (inStock === 'false') {
+      andClauses.push({
+        $or: [{ inStock: false }, { stockQty: { $lte: 0 } }]
+      });
+    }
+
+    if (andClauses.length > 0) {
+      filter.$and = andClauses;
+    }
+
+    const totalCount = await Product.countDocuments(filter);
+    const totalPages = Math.ceil(totalCount / paging.limit) || 1;
+
+    const products = await Product.find(filter)
       .populate('category', 'name slug icon type')
-      .sort({ inStock: -1, createdAt: -1, _id: 1 })
+      .sort({ inStock: -1, createdAt: -1, _id: -1 })
       .skip(paging.skip)
       .limit(paging.limit);
+
+    const hasMore = (paging.skip + products.length) < totalCount;
 
     res.json({
       success: true,
       page: paging.page,
       limit: paging.limit,
-      count: products.length,
       total: totalCount,
+      totalPages,
+      hasMore,
+      count: products.length,
       products: products.map((p) => formatProductResponse(p, req))
     });
   } catch (error) {
