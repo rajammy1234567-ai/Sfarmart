@@ -564,6 +564,72 @@ export const PartnerProvider = ({ children }) => {
     return null;
   };
 
+  // Cross-platform multipart upload transport helper:
+  // - On Web: uses standard fetch with FormData and Blob/File.
+  // - On Native (Android / iOS): uses XMLHttpRequest with React Native's native file descriptor { uri, name, type }.
+  //   This directly invokes React Native's native NetworkingModule / OkHttpClient, bypassing expo/fetch's convertFormDataAsync.
+  const uploadMultipart = async ({ url, resolved, authToken }) => {
+    // 1. Web path: standard fetch with FormData and Blob/File
+    if (Platform.OS === 'web' || resolved.isWebBlob) {
+      const formData = new FormData();
+      if (resolved.isWebBlob && resolved.name) {
+        formData.append('image', resolved.file, resolved.name);
+      } else {
+        formData.append('image', resolved.file);
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        },
+        body: formData
+      });
+
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        data = { success: false, message: `Server error (${res.status})` };
+      }
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    // 2. Native Android / iOS path: XMLHttpRequest
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      xhr.setRequestHeader('Accept', 'application/json');
+      // Note: Do NOT set Content-Type header manually. OkHttp sets multipart/form-data with boundary automatically.
+
+      xhr.timeout = 60000;
+
+      xhr.onload = () => {
+        let data = {};
+        try {
+          data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        } catch (e) {
+          data = { success: false, message: xhr.responseText || `Server responded with status ${xhr.status}` };
+        }
+        const ok = xhr.status >= 200 && xhr.status < 300;
+        resolve({ ok, status: xhr.status, data });
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during image upload. Please check your connection.'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Image upload timed out. Please check your network and try again.'));
+      };
+
+      const formData = new FormData();
+      formData.append('image', resolved.file);
+      xhr.send(formData);
+    });
+  };
+
   // Upload product image to durable storage
   const uploadProductImage = async (fileInput) => {
     if (!token) return { success: false, message: 'Not authenticated' };
@@ -573,28 +639,18 @@ export const PartnerProvider = ({ children }) => {
         return { success: false, message: 'Invalid image input format.' };
       }
 
-      const formData = new FormData();
-      if (resolved.isWebBlob) {
-        formData.append('image', resolved.file, resolved.name);
-      } else {
-        formData.append('image', resolved.file);
-      }
-
-      const res = await fetch(`${API_BASE_URL}/uploads/product-image`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formData
+      const { ok, status, data } = await uploadMultipart({
+        url: `${API_BASE_URL}/uploads/product-image`,
+        resolved,
+        authToken: token
       });
 
-      if (res.status === 401) {
+      if (status === 401) {
         await handleSessionExpired('Image upload returned 401');
         return { success: false, message: 'Session expired' };
       }
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (ok && data.success) {
         return {
           success: true,
           url: data.url,
@@ -618,28 +674,18 @@ export const PartnerProvider = ({ children }) => {
         return { success: false, message: 'Invalid image input format.' };
       }
 
-      const formData = new FormData();
-      if (resolved.isWebBlob) {
-        formData.append('image', resolved.file, resolved.name);
-      } else {
-        formData.append('image', resolved.file);
-      }
-
-      const res = await fetch(`${API_BASE_URL}/uploads/shop-photo`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formData
+      const { ok, status, data } = await uploadMultipart({
+        url: `${API_BASE_URL}/uploads/shop-photo`,
+        resolved,
+        authToken: token
       });
 
-      if (res.status === 401) {
+      if (status === 401) {
         await handleSessionExpired('Shop photo upload returned 401');
         return { success: false, message: 'Session expired' };
       }
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (ok && data.success) {
         if (data.vendor) {
           setVendor(data.vendor);
           try { await storage.saveVendor(data.vendor); } catch {}
